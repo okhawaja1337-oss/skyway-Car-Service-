@@ -15990,11 +15990,29 @@ function diqCoords(addr){if(!addr)return null;const n=normalizeAddr(addr);
   return null;}
 function diqHaversine(a,b){const R=3958.8,dLat=(b.lat-a.lat)*Math.PI/180,dLng=(b.lng-a.lng)*Math.PI/180,la1=a.lat*Math.PI/180,la2=b.lat*Math.PI/180;const h=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLng/2)**2;return R*2*Math.asin(Math.sqrt(h));}
 function driverLastLocation(driverId){
+  const d=STATE.drivers.find(x=>x.id===driverId);
+  // manually-set current location (from Driver IQ) — a dispatcher override
+  let manual=null;
+  if(d&&d.curLoc&&d.curLoc.addr){manual={addr:d.curLoc.addr,zone:diqZoneKey(d.curLoc.addr),coords:coordsForAddr(d.curLoc.addr)||diqCoords(d.curLoc.addr),status:'Set',when:d.curLoc.when||'',manual:true};}
+  // inferred from the most recent drop-off
+  let trip=null;
   const ts=STATE.trips.filter(t=>t.driverId===driverId&&(t.status==='Completed'||t.status==='Dispatched')&&t.doAddr);
-  if(!ts.length)return null;
-  ts.sort((a,b)=>(((b.dropDate||b.date||'')+' '+(b.dropTime||b.time||''))).localeCompare(((a.dropDate||a.date||'')+' '+(a.dropTime||a.time||''))));
-  const t=ts[0];return {addr:t.doAddr,zone:diqZoneKey(t.doAddr),coords:diqCoords(t.doAddr),status:t.status,when:(t.dropDate||t.date||'')+' '+(t.dropTime||t.time||''),tripNo:t.dispatchNo};
+  if(ts.length){ts.sort((a,b)=>(((b.dropDate||b.date||'')+' '+(b.dropTime||b.time||''))).localeCompare(((a.dropDate||a.date||'')+' '+(a.dropTime||a.time||''))));
+    const t=ts[0];trip={addr:t.doAddr,zone:diqZoneKey(t.doAddr),coords:coordsForAddr(t.doAddr)||diqCoords(t.doAddr),status:t.status,when:(t.dropDate||t.date||'')+' '+(t.dropTime||t.time||''),tripNo:t.dispatchNo};}
+  // whichever is newer wins, so a fresh drop-off automatically supersedes a stale manual pin
+  if(manual&&trip)return (String(manual.when).trim()>=String(trip.when).trim())?manual:trip;
+  return manual||trip||null;
 }
+function setDriverLoc(id){
+  const inp=$('setloc_'+id);if(!inp)return;const addr=(inp.value||'').trim();
+  if(!addr){toast('Type an address or area first.',true);return;}
+  const d=STATE.drivers.find(x=>x.id===id);if(!d)return;
+  d.curLoc={addr,when:todayStr()+' '+nowTime()};save();
+  const done=()=>{if(typeof renderDriverStatus==='function')renderDriverStatus();if($('view-optimizer')&&$('view-optimizer').classList.contains('active')&&typeof renderOptimizer==='function')renderOptimizer();toast(d.name+' placed at '+shortAddr(addr)+'.');};
+  if(!coordsForAddr(addr)&&isOnline()&&typeof geocode==='function'){toast('Locating '+shortAddr(addr)+'…');geocode(addr).then(done).catch(done);}
+  else done();
+}
+function clearDriverLoc(id){const d=STATE.drivers.find(x=>x.id===id);if(!d)return;delete d.curLoc;save();if(typeof renderDriverStatus==='function')renderDriverStatus();if($('view-optimizer')&&$('view-optimizer').classList.contains('active')&&typeof renderOptimizer==='function')renderOptimizer();toast(d.name+' location cleared — back to last drop-off.');}
 function diqVehOk(d,vtype,pax){
   const types=(d.vtypes||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
   const okType=!vtype||!types.length||types.includes((vtype||'').toLowerCase());
@@ -16093,9 +16111,11 @@ function renderDriverStatus(){
     let where=loc?(loc.zone||shortAddr(loc.addr)):'\u2014',idle='';
     if(loc&&loc.when){const w=new Date(loc.when.trim().replace(' ','T'));if(!isNaN(w)){const min=Math.round((now-w)/60000);if(min>=0&&min<100000)idle=min<60?min+'m':(Math.floor(min/60)+'h'+String(min%60).padStart(2,'0'));}}
     return {d,busy,where,idle,loc};});
-  host.innerHTML='<div class="tbl-scroll"><table class="data"><thead><tr><th>Driver</th><th>Status</th><th>Last-known location</th><th class="ctr">Since</th></tr></thead><tbody>'
-    +rows.map(r=>'<tr><td>'+esc(r.d.name)+'</td><td>'+(r.busy?'<span style="color:#bf6b00;font-weight:600;">On a trip</span>':(r.loc?'<span style="color:#1f7a3d;font-weight:600;">Idle</span>':'<span class="hint" style="margin:0;">unknown</span>'))+'</td><td>'+esc(r.where)+(r.loc&&r.loc.status==='Dispatched'?' <span class="hint" style="margin:0;">(en route)</span>':'')+'</td><td class="ctr hint" style="margin:0;">'+esc(r.idle||'\u2014')+'</td></tr>').join('')
-    +'</tbody></table></div><div class="hint" style="margin-top:6px;">Location is inferred from each driver\u2019s most recent drop-off \u2014 no GPS needed. Keep trips assigned and marked Dispatched/Completed to stay current.</div>';
+  host.innerHTML='<div class="tbl-scroll"><table class="data"><thead><tr><th>Driver</th><th>Status</th><th>Last-known location</th><th class="ctr">Since</th><th>Set current location</th></tr></thead><tbody>'
+    +rows.map(r=>{const set=r.loc&&r.loc.manual;
+      return '<tr><td>'+esc(r.d.name)+'</td><td>'+(r.busy?'<span style="color:#bf6b00;font-weight:600;">On a trip</span>':(r.loc?'<span style="color:#1f7a3d;font-weight:600;">Idle</span>':'<span class="hint" style="margin:0;">unknown</span>'))+'</td><td>'+esc(r.where)+(set?' <span class="hint" style="margin:0;color:#1f5fbf;">(set)</span>':(r.loc&&r.loc.status==='Dispatched'?' <span class="hint" style="margin:0;">(en route)</span>':''))+'</td><td class="ctr hint" style="margin:0;">'+esc(r.idle||'\u2014')+'</td>'
+        +'<td style="white-space:nowrap;"><input id="setloc_'+r.d.id+'" placeholder="address or area" style="width:150px;display:inline-block;padding:2px 5px;font-size:11px;" onkeydown="if(event.key===\'Enter\'){event.preventDefault();setDriverLoc(\''+r.d.id+'\');}"> <button class="btn btn-navy btn-sm" onclick="setDriverLoc(\''+r.d.id+'\')">Set</button>'+(set?' <button class="btn btn-ghost btn-sm" onclick="clearDriverLoc(\''+r.d.id+'\')" title="Back to last drop-off">Clear</button>':'')+'</td></tr>';}).join('')
+    +'</tbody></table></div><div class="hint" style="margin-top:6px;">Location is inferred from each driver\u2019s most recent drop-off \u2014 no GPS needed. Set a current location manually for a driver with no recent trip; a fresh drop-off automatically takes over again.</div>';
 }
 function renderDriverIQ(){
   const booked=STATE.trips.filter(t=>t.status==='Booked').sort((a,b)=>(a.date+a.time<b.date+b.time?-1:1));

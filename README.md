@@ -67,6 +67,11 @@ and import the file on the other machine.
   call chains on. Distances work fully offline from the Address Book; live road
   routes/tiles draw when online. Tunable **road factor**, **average speed**, and
   a 12-hour planning horizon.
+- **Manual "set driver location"** — in **Driver IQ → Driver status & location**,
+  place any driver at an address or area by hand. Useful for a driver with no
+  recent trip, or one who has repositioned. The pin feeds the whole system
+  (Driver IQ ranking, staging and the Optimizer map/chaining), and a fresh
+  drop-off automatically supersedes it, so it stays self-correcting.
 - **One-click "★ Best" driver assignment** on every active-board row — assigns
   the highest-ranked available driver using the existing Driver IQ engine
   (caller regulars, route familiarity, zone, vehicle fit and distance), and
