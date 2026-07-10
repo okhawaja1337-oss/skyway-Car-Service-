@@ -34,6 +34,7 @@ and import the file on the other machine.
 | **Fleet** | Drivers and vehicles, capacity and type matching. |
 | **Earnings** | Per-driver settlement and payout math. |
 | **Driver IQ** | Ranks the best driver for a call from caller history, route familiarity, zone and last-known location; staging suggestions and per-driver playbooks. |
+| **Optimizer** | Live fleet map plus an auto-dispatch planner that chains every open call to the driver who reaches it with the fewest empty miles, keeping cars continuously moving. |
 | **Address Book** | Saved, geocoded pickup/drop-off locations for instant autocomplete. |
 | **TLC Reports** | Trip-record exports formatted for TLC/FHV reporting. |
 | **Business** | Monthly P&L, expenses and finance CSV export. |
@@ -48,6 +49,24 @@ and import the file on the other machine.
 
 ## Recent improvements
 
+- **Fleet Optimizer (new tab)** — maps where every driver is (or will be after
+  their current drop-off) and chains each open call to the driver who reaches it
+  with the fewest empty "deadhead" miles, so pickups come faster and cars stay
+  in motion. It shows:
+  - a **live fleet map** (Leaflet online, offline scatter map otherwise) with
+    idle vs on-trip drivers, open pickups, and each assignment's deadhead + live
+    legs — plus optional live street routing;
+  - **ranked assignments** — the best driver for each open call, its empty-mile
+    cost and pickup ETA, with one-click *Assign* or *Apply all*;
+  - **driver chains** — each driver's next back-to-back runs with total empty
+    miles and a "% loaded" utilization figure.
+
+  The matcher is a greedy nearest-in-time chaining heuristic: it walks open
+  calls earliest-first, assigns the lowest-cost feasible driver (deadhead miles,
+  lateness, vehicle fit), then advances that driver to the drop-off so the next
+  call chains on. Distances work fully offline from the Address Book; live road
+  routes/tiles draw when online. Tunable **road factor**, **average speed**, and
+  a 12-hour planning horizon.
 - **One-click "★ Best" driver assignment** on every active-board row — assigns
   the highest-ranked available driver using the existing Driver IQ engine
   (caller regulars, route familiarity, zone, vehicle fit and distance), and
