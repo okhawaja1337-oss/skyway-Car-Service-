@@ -54,12 +54,17 @@ and import the file on the other machine.
   with the fewest empty "deadhead" miles, so pickups come faster and cars stay
   in motion. It shows:
   - a **live fleet map** (Leaflet online, offline scatter map otherwise) with
-    idle vs on-trip drivers, open pickups, and each assignment's deadhead + live
-    legs — plus optional live street routing;
-  - **ranked assignments** — the best driver for each open call, its empty-mile
-    cost and pickup ETA, with one-click *Assign* or *Apply all*;
-  - **driver chains** — each driver's next back-to-back runs with total empty
-    miles and a "% loaded" utilization figure.
+    idle vs on-trip drivers, open pickups and drop-offs, and each assignment's
+    empty + fare legs drawn as **real, map-style road routes** (like Google
+    Maps) with distance + drive-time tooltips;
+  - **ranked assignments** — the best driver for each open call with the empty
+    and fare leg distances/times and **pick-up + drop-off ETAs**, one-click
+    *Assign* or *Apply all*;
+  - **driver chains** — each driver's next back-to-back runs with time windows,
+    total empty miles and a "% loaded" utilization figure.
+
+  Distances and times work offline from the Address Book; when online it fetches
+  real road routes (Google or OSRM) and refines every ETA to live drive times.
 
   The matcher is a greedy nearest-in-time chaining heuristic: it walks open
   calls earliest-first, assigns the lowest-cost feasible driver (deadhead miles,

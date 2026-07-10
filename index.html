@@ -998,7 +998,7 @@ Flushing, NY 11366"></textarea></label>
 
   <!-- ============ FLEET OPTIMIZER ============ -->
   <section class="view" id="view-optimizer">
-    <div class="notice">Keeps every car moving. It maps where each driver is (or will be after their current drop-off), then chains each open call to the driver who reaches it with the fewest empty "deadhead" miles &mdash; so pickups come faster and cars idle less. Distances work offline from your Address Book; live street routes draw when you're online.</div>
+    <div class="notice">Keeps every car moving. It maps where each driver is (or will be after their current drop-off), then chains each open call to the driver who reaches it with the fewest empty "deadhead" miles &mdash; so pickups come faster and cars idle less. When you're online it draws real, map-style road routes for every planned trip with live drive times and pick-up / drop-off ETAs; offline it estimates from your Address Book so the plan still works.</div>
     <div class="panel">
       <div class="panel-head">Auto-Dispatch Plan
         <span style="text-transform:none;font-weight:400;font-size:11px;color:var(--muted);">assigns open (Booked) calls only &mdash; dispatched trips are left alone</span></div>
@@ -1006,7 +1006,7 @@ Flushing, NY 11366"></textarea></label>
         <div class="inline" style="align-items:flex-end;">
           <label class="fld" style="margin:0;flex:0 0 auto;"><span class="lbl">Road factor</span><input type="number" step="0.05" min="1" id="opt_factor" value="1.4" style="width:90px;" title="Multiplier turning straight-line distance into road miles"></label>
           <label class="fld" style="margin:0;flex:0 0 auto;"><span class="lbl">Avg speed (mph)</span><input type="number" step="1" min="5" id="opt_speed" style="width:100px;" title="Used to turn miles into minutes"></label>
-          <label class="fld" style="margin:0;flex:0 0 auto;display:flex;flex-direction:row;align-items:center;gap:6px;"><input type="checkbox" id="opt_useroads" style="width:auto;"><span class="lbl" style="margin:0;">Draw live street routes</span></label>
+          <label class="fld" style="margin:0;flex:0 0 auto;display:flex;flex-direction:row;align-items:center;gap:6px;"><input type="checkbox" id="opt_useroads" style="width:auto;" checked><span class="lbl" style="margin:0;">Road-shaped routes (map-style)</span></label>
           <div style="flex:1;"></div>
           <button class="btn btn-go" id="opt_run" type="button">&#9881; Build optimal plan</button>
           <button class="btn btn-navy" id="opt_apply" type="button" title="Assign every recommended driver to its call">Apply all</button>
@@ -16268,25 +16268,49 @@ function optBuildPlan(){
       const arrive=new Date(st.freeAt.getTime()+deadMin*60000);
       const lateMin=Math.max(0,(arrive-c.when)/60000);
       const cost=(dead!=null?dead:8)+lateMin*0.5+(n.busy?1.0:0)+(vok.okType?0:8)+(dead==null?6:0);
-      if(!best||cost<best.cost)best={n,cost,dead,deadMin,arrive,lateMin,vok};
+      if(!best||cost<best.cost)best={n,cost,dead,vok,from:st.loc};
     });
     if(!best){assignments.push({callId:c.t.id,c,driverId:null});return;}
+    const a={callId:c.t.id,c,driverId:best.n.d.id,node:best.n,from:best.from,dead:best.dead,typeWarn:!best.vok.okType};
+    assignments.push(a);chains[best.n.d.id].push(a);
     const st=cur[best.n.d.id];
-    assignments.push({callId:c.t.id,c,driverId:best.n.d.id,node:best.n,dead:best.dead,arrive:best.arrive,lateMin:best.lateMin,typeWarn:!best.vok.okType});
-    chains[best.n.d.id].push({c,dead:best.dead,arrive:best.arrive,lateMin:best.lateMin});
-    const startServe=new Date(Math.max(best.arrive.getTime(),c.when.getTime()));
+    const arrive=new Date(st.freeAt.getTime()+(best.dead!=null?optMinutes(best.dead):12)*60000);
+    const startServe=new Date(Math.max(arrive.getTime(),c.when.getTime()));
     st.loc=c.do||c.pu||st.loc;st.freeAt=new Date(startServe.getTime()+optTripMins(c)*60000);
   });
-  const totDead=assignments.filter(a=>a.dead!=null).reduce((s,a)=>s+a.dead,0);
-  const assigned=assignments.filter(a=>a.driverId).length;
-  return {nodes,calls,assignments,chains,totDead,assigned,unassigned:assignments.length-assigned};
+  const plan={nodes,calls,assignments,chains,unassigned:assignments.filter(a=>!a.driverId).length};
+  optRecomputeTimes(plan);
+  return plan;
+}
+// Walk each driver's chain in time order, using real road minutes where fetched (else estimates),
+// to produce a pickup ETA and drop-off ETA for every run — the "estimated times" shown everywhere.
+function optRecomputeTimes(plan){
+  const cur={};plan.nodes.forEach(n=>cur[n.d.id]=n.freeAt);let totDead=0;
+  plan.assignments.forEach(a=>{if(!a.driverId)return;
+    const deadMi=a.deadRoute?a.deadRoute.miles:(a.dead!=null?a.dead:((a.from&&a.c.pu)?optRoadMiles(a.from,a.c.pu):null));
+    const deadMin=a.deadRoute?a.deadRoute.minutes:(deadMi!=null?optMinutes(deadMi):12);
+    const tripMi=a.liveRoute?a.liveRoute.miles:((a.c.pu&&a.c.do)?optRoadMiles(a.c.pu,a.c.do):0);
+    const tripMin=a.liveRoute?a.liveRoute.minutes:optTripMins(a.c);
+    const free=cur[a.driverId]||new Date();
+    const arrive=new Date(free.getTime()+deadMin*60000);
+    const startServe=new Date(Math.max(arrive.getTime(),a.c.when.getTime()));
+    const dropAt=new Date(startServe.getTime()+tripMin*60000);
+    a.arrive=arrive;a.dropAt=dropAt;a.lateMin=Math.max(0,(arrive-a.c.when)/60000);
+    a.deadMi=deadMi;a.deadMin=deadMin;a.tripMi=tripMi;a.tripMin=tripMin;
+    if(deadMi!=null)totDead+=deadMi;cur[a.driverId]=dropAt;
+  });
+  plan.totDead=totDead;plan.assigned=plan.assignments.filter(a=>a.driverId).length;
 }
 function optDrvName(id){const d=STATE.drivers.find(x=>x.id===id);return d?d.name:'—';}
+function optFmtT(d){return d?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'—';}
 function renderOptimizer(){
   if($('opt_speed')&&!$('opt_speed').value)$('opt_speed').value=(STATE.settings.rate&&STATE.settings.rate.speed)||18;
   const plan=_optPlan=optBuildPlan();
-  const idle=plan.nodes.filter(n=>!n.busy).length;
-  const avgDead=plan.assigned?(plan.totDead/plan.assigned):0;
+  optRenderSummary(plan);optRenderPlan(plan);optRenderChains(plan);optDrawMap(plan);
+  if(isOnline())optEnrichRoutes(plan);   // fetch real road routes + drive times, then refine
+}
+function optRenderSummary(plan){
+  const idle=plan.nodes.filter(n=>!n.busy).length,avgDead=plan.assigned?(plan.totDead/plan.assigned):0;
   $('opt_summary').innerHTML='<div class="opt-kpi">'
     +'<div class="k"><div class="v">'+plan.calls.length+'</div><div class="l">Open calls</div></div>'
     +'<div class="k"><div class="v">'+plan.nodes.length+'</div><div class="l">Active drivers ('+idle+' idle)</div></div>'
@@ -16295,33 +16319,56 @@ function renderOptimizer(){
     +'<div class="k"><div class="v">'+avgDead.toFixed(1)+'</div><div class="l">Avg empty mi / call</div></div>'
     +(plan.unassigned?'<div class="k" style="background:#f6dcda;border-color:#e0b3ad;"><div class="v" style="color:#b02318;">'+plan.unassigned+'</div><div class="l" style="color:#8a3a30;">Unmatched</div></div>':'')
     +'</div>';
-  if(!plan.calls.length){$('opt_plan').innerHTML='<div class="empty">No open (Booked) calls in the next '+(STATE.settings.optHorizonH||12)+'h. New bookings show up here automatically.</div>';}
-  else{
-    $('opt_plan').innerHTML='<div class="tbl-scroll" style="max-height:440px;"><table class="data"><thead><tr><th>Call</th><th>Pick-up</th><th>Best driver</th><th class="ctr">Deadhead</th><th class="ctr">ETA</th><th></th></tr></thead><tbody>'
-     +plan.assignments.map(a=>{const c=a.c,t=c.t;
-        if(!a.driverId)return '<tr><td class="mono">#'+t.dispatchNo+'</td><td>'+esc(shortAddr(t.puAddr))+'</td><td colspan="4" class="hint" style="margin:0;">No car can fit this party right now.</td></tr>';
-        const eta=a.arrive?a.arrive.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'—';
-        return '<tr><td class="mono">#'+t.dispatchNo+'</td><td title="'+esc(t.puAddr)+'">'+esc(shortAddr(t.puAddr))+'</td>'
-          +'<td>'+esc(optDrvName(a.driverId))+(a.typeWarn?' <span class="hint" style="margin:0;color:#bf6b00;" title="Vehicle type may not match">('+esc(t.vtype||'')+'?)</span>':'')+(a.node&&a.node.busy?' <span class="hint" style="margin:0;">(finishing a trip)</span>':'')+'</td>'
-          +'<td class="ctr opt-num">'+(a.dead!=null?a.dead.toFixed(1)+' mi':'—')+'</td>'
-          +'<td class="ctr"><span class="'+(a.lateMin>5?'opt-late':'opt-ontime')+'">'+eta+'</span></td>'
-          +'<td class="ctr"><button class="btn btn-go btn-sm" onclick="optAssignOne(\''+t.id+'\',\''+a.driverId+'\')">Assign</button></td></tr>';
-      }).join('')+'</tbody></table></div>';
-  }
+}
+function optRenderPlan(plan){
+  if(!plan.calls.length){$('opt_plan').innerHTML='<div class="empty">No open (Booked) calls in the next '+(STATE.settings.optHorizonH||12)+'h. New bookings show up here automatically.</div>';return;}
+  $('opt_plan').innerHTML='<div class="tbl-scroll" style="max-height:460px;"><table class="data"><thead><tr><th>Call</th><th>Route</th><th>Best driver</th><th class="ctr">Empty</th><th class="ctr">Trip</th><th class="ctr">Pickup</th><th class="ctr">Drop</th><th></th></tr></thead><tbody>'
+   +plan.assignments.map(a=>{const c=a.c,t=c.t;
+      if(!a.driverId)return '<tr><td class="mono">#'+t.dispatchNo+'</td><td>'+esc(shortAddr(t.puAddr))+'</td><td colspan="6" class="hint" style="margin:0;">No car can fit this party right now.</td></tr>';
+      const emptyTxt=a.deadMi!=null?a.deadMi.toFixed(1)+' mi<div class="hint" style="margin:0;">~'+Math.round(a.deadMin)+' min</div>':'—';
+      const tripTxt=a.tripMi?a.tripMi.toFixed(1)+' mi<div class="hint" style="margin:0;">~'+Math.round(a.tripMin)+' min</div>':'—';
+      return '<tr><td class="mono">#'+t.dispatchNo+'</td><td title="'+esc(t.puAddr)+' → '+esc(t.doAddr)+'">'+esc(shortAddr(t.puAddr))+' <span class="hint" style="margin:0;">→ '+esc(shortAddr(t.doAddr))+'</span></td>'
+        +'<td>'+esc(optDrvName(a.driverId))+(a.typeWarn?' <span class="hint" style="margin:0;color:#bf6b00;" title="Vehicle type may not match">('+esc(t.vtype||'')+'?)</span>':'')+(a.node&&a.node.busy?' <span class="hint" style="margin:0;">(finishing a trip)</span>':'')+'</td>'
+        +'<td class="ctr opt-num">'+emptyTxt+'</td>'
+        +'<td class="ctr opt-num">'+tripTxt+'</td>'
+        +'<td class="ctr"><span class="'+(a.lateMin>5?'opt-late':'opt-ontime')+'">'+optFmtT(a.arrive)+'</span></td>'
+        +'<td class="ctr opt-num">'+optFmtT(a.dropAt)+'</td>'
+        +'<td class="ctr"><button class="btn btn-go btn-sm" onclick="optAssignOne(\''+t.id+'\',\''+a.driverId+'\')">Assign</button></td></tr>';
+    }).join('')+'</tbody></table></div>'
+   +'<div class="hint" style="margin:6px 2px 0;">'+(plan._enriched?'✓ Times use live road routes.':(isOnline()?'Estimating… live drive times will refine these in a moment.':'Offline estimates (straight-line × road factor).'))+'</div>';
+}
+function optRenderChains(plan){
   const chIds=Object.keys(plan.chains).filter(id=>plan.chains[id].length);
-  if(!chIds.length){$('opt_chains').innerHTML='<div class="empty">No chains yet — needs open calls and active drivers.</div>';}
-  else{chIds.sort((a,b)=>plan.chains[b].length-plan.chains[a].length);
-    $('opt_chains').innerHTML=chIds.map(id=>{const node=plan.nodes.find(n=>n.d.id===id),legs=plan.chains[id];
-      const dh=legs.reduce((s,l)=>s+(l.dead||0),0);
-      const live=legs.reduce((s,l)=>s+((l.c.pu&&l.c.do)?optRoadMiles(l.c.pu,l.c.do):0),0);
-      const util=(live+dh)>0?Math.round(live/(live+dh)*100):0;
-      const startWhere=node&&node.where?shortAddr(node.where):'base / unknown';
-      let h='<div class="opt-chain"><h4>'+esc(node?node.d.name:'Driver')+' <span class="hint" style="margin:0;font-weight:400;">'+legs.length+' run'+(legs.length>1?'s':'')+' · '+dh.toFixed(1)+' mi empty · '+util+'% loaded</span></h4>';
-      h+='<div class="hint" style="margin:0 0 4px;">Starts at <b>'+esc(startWhere)+'</b>'+(node&&node.busy?' (after current drop-off)':'')+'</div>';
-      legs.forEach(l=>{const t=l.c.t;h+='<div class="opt-leg"><span class="dh">'+(l.dead!=null?'+'+l.dead.toFixed(1)+' mi →':'→')+'</span><span><b>#'+t.dispatchNo+'</b> '+esc(shortAddr(t.puAddr))+' → '+esc(shortAddr(t.doAddr))+(l.lateMin>5?' <span class="opt-late">(tight)</span>':'')+'</span></div>';});
-      return h+'</div>';
-    }).join('');}
-  optDrawMap(plan);
+  if(!chIds.length){$('opt_chains').innerHTML='<div class="empty">No chains yet — needs open calls and active drivers.</div>';return;}
+  chIds.sort((a,b)=>plan.chains[b].length-plan.chains[a].length);
+  $('opt_chains').innerHTML=chIds.map(id=>{const node=plan.nodes.find(n=>n.d.id===id),legs=plan.chains[id];
+    const dh=legs.reduce((s,l)=>s+(l.deadMi||0),0),live=legs.reduce((s,l)=>s+(l.tripMi||0),0);
+    const util=(live+dh)>0?Math.round(live/(live+dh)*100):0;
+    const startWhere=node&&node.where?shortAddr(node.where):'base / unknown';
+    let h='<div class="opt-chain"><h4>'+esc(node?node.d.name:'Driver')+' <span class="hint" style="margin:0;font-weight:400;">'+legs.length+' run'+(legs.length>1?'s':'')+' · '+dh.toFixed(1)+' mi empty · '+util+'% loaded</span></h4>';
+    h+='<div class="hint" style="margin:0 0 4px;">Starts at <b>'+esc(startWhere)+'</b>'+(node&&node.busy?' (after current drop-off)':'')+'</div>';
+    legs.forEach(l=>{const t=l.c.t;h+='<div class="opt-leg"><span class="dh">'+(l.deadMi!=null?'+'+l.deadMi.toFixed(1)+' mi →':'→')+'</span><span><b>#'+t.dispatchNo+'</b> '+esc(shortAddr(t.puAddr))+' → '+esc(shortAddr(t.doAddr))+' <span class="hint" style="margin:0;">'+optFmtT(l.arrive)+'–'+optFmtT(l.dropAt)+(l.tripMi?' · '+l.tripMi.toFixed(1)+' mi':'')+'</span>'+(l.lateMin>5?' <span class="opt-late">(tight)</span>':'')+'</span></div>';});
+    return h+'</div>';
+  }).join('');
+}
+// small concurrency pool so we don't hammer the routing server
+function optPool(items,worker,cap){return new Promise(res=>{const q=items.slice(),n=items.length;if(!n)return res();let active=0,done=0;
+  const next=()=>{while(active<cap&&q.length){const it=q.shift();active++;Promise.resolve(worker(it)).catch(()=>{}).then(()=>{active--;done++;if(done===n)res();else next();});}};next();});}
+let _optEnrichSeq=0;
+async function optEnrichRoutes(plan){
+  if(!isOnline())return;const myseq=++_optEnrichSeq;
+  const legs=[];
+  plan.assignments.forEach(a=>{if(!a.driverId)return;
+    if(a.from&&a.c.pu)legs.push({a,kind:'dead',pts:[a.from,a.c.pu]});
+    if(a.c.pu&&a.c.do)legs.push({a,kind:'live',pts:[a.c.pu,a.c.do]});});
+  if(!legs.length)return;
+  const capped=legs.slice(0,80);
+  if($('opt_maphint'))$('opt_maphint').textContent='Calculating road routes and drive times…';
+  await optPool(capped,async L2=>{const r=await routeFor(L2.pts);if(!r)return;if(L2.kind==='dead')L2.a.deadRoute=r;else L2.a.liveRoute=r;},5);
+  if(myseq!==_optEnrichSeq||plan!==_optPlan)return;   // a newer plan replaced this run
+  plan._enriched=true;optRecomputeTimes(plan);
+  optRenderSummary(plan);optRenderPlan(plan);optRenderChains(plan);
+  if(isOnline()&&window.L&&optLayer)optPaint(plan);else optDrawMap(plan);
 }
 function optAssignOne(callId,driverId){const t=STATE.trips.find(x=>x.id===callId);if(!t)return;t.driverId=driverId;save();if(typeof refreshBoard==='function')refreshBoard();toast('Assigned '+optDrvName(driverId)+' to #'+t.dispatchNo+'.');renderOptimizer();}
 function optApplyAll(){if(!_optPlan)return;let n=0;_optPlan.assignments.forEach(a=>{if(a.driverId){const t=STATE.trips.find(x=>x.id===a.callId);if(t){t.driverId=a.driverId;n++;}}});save();if(typeof refreshBoard==='function')refreshBoard();toast(n?(n+' call'+(n>1?'s':'')+' assigned to their best drivers.'):'No matched calls to assign.');renderOptimizer();}
@@ -16338,16 +16385,19 @@ function optPaint(plan){
   if(!optLayer)return;optLayer.clearLayers();const pts=[];
   plan.nodes.forEach(n=>{if(!n.loc)return;pts.push([n.loc.lat,n.loc.lng]);
     L.circleMarker([n.loc.lat,n.loc.lng],{radius:7,color:'#fff',weight:2,fillColor:n.busy?'#c9820a':'#1b7a43',fillOpacity:1}).bindPopup('<b>'+esc(n.d.name)+'</b><br>'+(n.busy?'On a trip — free near ':'Idle near ')+esc(shortAddr(n.where||'')||'unknown')).addTo(optLayer);});
-  plan.assignments.forEach(a=>{if(!a.c.pu)return;pts.push([a.c.pu.lat,a.c.pu.lng]);
-    L.circleMarker([a.c.pu.lat,a.c.pu.lng],{radius:6,color:'#7e1114',weight:2,fillColor:'#a4161a',fillOpacity:.95}).bindPopup('<b>#'+a.c.t.dispatchNo+'</b> pickup<br>'+esc(shortAddr(a.c.t.puAddr))+(a.driverId?'<br>→ '+esc(optDrvName(a.driverId)):'')).addTo(optLayer);});
-  const roads=$('opt_useroads')&&$('opt_useroads').checked;
-  plan.assignments.forEach(a=>{if(!a.driverId)return;const n=a.node;
-    if(n&&n.loc&&a.c.pu)L.polyline([[n.loc.lat,n.loc.lng],[a.c.pu.lat,a.c.pu.lng]],{color:'#8a8a8a',weight:2,opacity:.7,dashArray:'6 5'}).addTo(optLayer);
-    if(a.c.pu&&a.c.do){L.polyline([[a.c.pu.lat,a.c.pu.lng],[a.c.do.lat,a.c.do.lng]],{color:'#13315c',weight:3,opacity:roads?.35:.6}).addTo(optLayer);
-      if(roads)routeFor([a.c.pu,a.c.do]).then(r=>{if(r&&r.geo&&optLayer)L.geoJSON(r.geo,{style:{color:'#13315c',weight:4,opacity:.85}}).addTo(optLayer);}).catch(()=>{});}});
+  plan.assignments.forEach(a=>{if(!a.c.pu)return;pts.push([a.c.pu.lat,a.c.pu.lng]);if(a.c.do)pts.push([a.c.do.lat,a.c.do.lng]);
+    L.circleMarker([a.c.pu.lat,a.c.pu.lng],{radius:6,color:'#7e1114',weight:2,fillColor:'#a4161a',fillOpacity:.95}).bindPopup('<b>#'+a.c.t.dispatchNo+'</b> pickup'+(a.arrive?' · '+optFmtT(a.arrive):'')+'<br>'+esc(shortAddr(a.c.t.puAddr))+(a.driverId?'<br>→ '+esc(optDrvName(a.driverId)):'')).addTo(optLayer);
+    if(a.c.do)L.circleMarker([a.c.do.lat,a.c.do.lng],{radius:5,color:'#13315c',weight:2,fillColor:'#26406b',fillOpacity:.9}).bindPopup('<b>#'+a.c.t.dispatchNo+'</b> drop-off'+(a.dropAt?' · '+optFmtT(a.dropAt):'')+'<br>'+esc(shortAddr(a.c.t.doAddr))).addTo(optLayer);});
+  const roads=!$('opt_useroads')||$('opt_useroads').checked;
+  const drawLeg=(from,to,st,tip,route)=>{if(!from||!to)return;
+    if(roads&&route&&route.geo){L.geoJSON(route.geo,{style:{color:st.color,weight:st.weight+1,opacity:.85,dashArray:st.dash}}).bindTooltip(tip+route.miles.toFixed(1)+' mi · ~'+Math.round(route.minutes)+' min',{sticky:true}).addTo(optLayer);}
+    else{const mi=route?route.miles:haversine(from,to)*optRoadFactor();const pl=L.polyline([[from.lat,from.lng],[to.lat,to.lng]],{color:st.color,weight:st.weight,opacity:st.opacity,dashArray:st.dash}).addTo(optLayer);pl.bindTooltip(tip+mi.toFixed(1)+' mi'+(route?' · ~'+Math.round(route.minutes)+' min':''),{sticky:true});}};
+  plan.assignments.forEach(a=>{if(!a.driverId)return;
+    drawLeg(a.from,a.c.pu,{color:'#8a8a8a',weight:2,opacity:.7,dash:'6 5'},'Empty to #'+a.c.t.dispatchNo+': ',a.deadRoute);
+    drawLeg(a.c.pu,a.c.do,{color:'#13315c',weight:3,opacity:.6,dash:null},'Trip #'+a.c.t.dispatchNo+': ',a.liveRoute);});
   if(pts.length)optMap.fitBounds(pts,{padding:[30,30]});
   const loc=plan.nodes.filter(n=>n.loc).length;
-  $('opt_maphint').textContent=loc+' of '+plan.nodes.length+' drivers located · '+plan.assignments.filter(a=>a.c.pu).length+' calls mapped'+(loc<plan.nodes.length?' — drivers with no logged drop-off aren’t placed yet':'');
+  $('opt_maphint').textContent=(plan._enriched?'Live road routes & drive times shown. ':'')+loc+' of '+plan.nodes.length+' drivers located · '+plan.assignments.filter(a=>a.c.pu).length+' calls mapped'+(loc<plan.nodes.length?' — drivers with no logged drop-off aren’t placed yet':'');
 }
 function optPaintOffline(plan){
   const el=$('opt_diagram');if(!el)return;const pts=[];
@@ -16362,8 +16412,8 @@ function optScatterSVG(pts,plan){
   if(maxLa-minLa<1e-4){maxLa+=5e-4;minLa-=5e-4;}if(maxLo-minLo<1e-4){maxLo+=5e-4;minLo-=5e-4;}
   const X=lo=>pad+(lo-minLo)/(maxLo-minLo)*(W-2*pad),Y=la=>pad+(maxLa-la)/(maxLa-minLa)*(H-2*pad);
   let legs='';
-  (plan?plan.assignments:[]).forEach(a=>{if(!a.driverId||!a.node||!a.node.loc||!a.c.pu)return;
-    legs+='<line x1="'+X(a.node.loc.lng).toFixed(1)+'" y1="'+Y(a.node.loc.lat).toFixed(1)+'" x2="'+X(a.c.pu.lng).toFixed(1)+'" y2="'+Y(a.c.pu.lat).toFixed(1)+'" stroke="#8a8a8a" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.7"/>';
+  (plan?plan.assignments:[]).forEach(a=>{if(!a.driverId||!a.from||!a.c.pu)return;
+    legs+='<line x1="'+X(a.from.lng).toFixed(1)+'" y1="'+Y(a.from.lat).toFixed(1)+'" x2="'+X(a.c.pu.lng).toFixed(1)+'" y2="'+Y(a.c.pu.lat).toFixed(1)+'" stroke="#8a8a8a" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.7"/>';
     if(a.c.do)legs+='<line x1="'+X(a.c.pu.lng).toFixed(1)+'" y1="'+Y(a.c.pu.lat).toFixed(1)+'" x2="'+X(a.c.do.lng).toFixed(1)+'" y2="'+Y(a.c.do.lat).toFixed(1)+'" stroke="#13315c" stroke-width="2" opacity="0.55"/>';});
   const dots=pts.map(p=>{const col=p.kind==='call'?'#a4161a':p.kind==='busy'?'#c9820a':'#1b7a43';return '<circle cx="'+X(p.c.lng).toFixed(1)+'" cy="'+Y(p.c.lat).toFixed(1)+'" r="6" fill="'+col+'" stroke="#fff" stroke-width="2"/>';}).join('');
   return '<svg viewBox="0 0 '+W+' '+H+'" width="100%" xmlns="http://www.w3.org/2000/svg" style="background:#eef3f7;border:1px solid #d5dde4;"><text x="'+(pad-8)+'" y="'+(pad-12)+'" font-size="12" font-weight="700" fill="#5d5d5d">N ↑</text>'+legs+dots+'</svg>';
