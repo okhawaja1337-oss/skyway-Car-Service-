@@ -504,6 +504,41 @@
   body.gold .tab.active,body.gold .panel-head{text-transform:uppercase;letter-spacing:.6px;}
   body.gold .statusbar{border-top:4px solid;border-image:repeating-conic-gradient(#d4af37 0 25%,#0e0f12 0 50%) 4;}
   body.gold .btn-go{text-transform:uppercase;letter-spacing:.4px;}
+
+  /* ============ FLUID UI POLISH — smooth motion & softer feel (theme-agnostic) ============ */
+  .btn,.ct-btn,.tab,.seg-btn,.badge,input,select,textarea,.dir-row,.ci-card,.opt-chain,.stat,.dot,.cellsel,td,th{
+    transition:background-color .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease, transform .08s ease, opacity .16s ease;}
+  .btn:hover,.ct-btn:hover{transform:translateY(-1px);}
+  .btn:active,.ct-btn:active{transform:translateY(1px);}
+  .btn:focus-visible,.ct-btn:focus-visible,.tab:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--green);outline-offset:1px;}
+  .tab{position:relative;}
+  .view.active{animation:skyFade .2s ease both;}
+  @keyframes skyFade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+  .panel{transition:box-shadow .18s ease, border-color .18s ease;}
+  .ci-card:hover,.opt-chain:hover{box-shadow:0 2px 10px rgba(0,0,0,.10);}
+  table.data tbody tr,table.sheet tbody tr{transition:background-color .12s ease;}
+  .stat{transition:transform .12s ease, box-shadow .18s ease;} .stat:hover{transform:translateY(-2px);}
+  .toast{transition:opacity .2s ease, transform .2s cubic-bezier(.2,.9,.3,1.2);transform:translateX(-50%) translateY(8px);}
+  .toast.show{transform:translateX(-50%) translateY(0);}
+  html{scroll-behavior:smooth;}
+  *::-webkit-scrollbar{width:11px;height:11px;} *::-webkit-scrollbar-thumb{background:rgba(140,140,150,.45);border-radius:6px;border:2px solid transparent;background-clip:padding-box;}
+  *::-webkit-scrollbar-thumb:hover{background:rgba(140,140,150,.7);background-clip:padding-box;}
+  *::-webkit-scrollbar-track{background:transparent;}
+  /* live-sync indicator */
+  .sb-sync.on{color:#2e9c5a;}
+  .live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#2e9c5a;margin-right:2px;vertical-align:middle;box-shadow:0 0 0 0 rgba(46,156,90,.6);animation:livePulse 1.6s ease-out infinite;}
+  @keyframes livePulse{0%{box-shadow:0 0 0 0 rgba(46,156,90,.5);}70%{box-shadow:0 0 0 6px rgba(46,156,90,0);}100%{box-shadow:0 0 0 0 rgba(46,156,90,0);}}
+  body.gold .sb-sync.on{color:#7bd69b;} body.gold .live-dot{background:#7bd69b;}
+  /* softer, easier-on-the-eyes surfaces */
+  body.gold{background:radial-gradient(1200px 700px at 50% -10%,#1c1f27 0%,#0c0d10 60%,#090a0c 100%);}
+  body.gold .panel{box-shadow:0 1px 0 rgba(255,255,255,.02) inset, 0 2px 8px rgba(0,0,0,.25);}
+  body.gold .btn-go:hover{box-shadow:0 2px 12px rgba(212,175,55,.28);}
+  body.gold .tab.active{box-shadow:inset 0 -1px 0 #d4af37;}
+  @media (prefers-reduced-motion:reduce){
+    *,.view.active,.toast,.live-dot{animation:none !important; transition:none !important;}
+    html{scroll-behavior:auto;}
+    .btn:hover,.ct-btn:hover,.btn:active,.ct-btn:active,.stat:hover{transform:none;}
+  }
 </style>
 </head>
 <body>
@@ -13950,6 +13985,22 @@ const NYC_LOCALITIES=/(QUEENS|BROOKLYN|MANHATTAN|BRONX|STATEN ISLAND|NEW YORK|AS
 const KEY='skyway_dispatch_v2';
 const $=id=>document.getElementById(id);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+/* ===== cross-window bus: lets the main console and every pop-out screen talk in real time ===== */
+const WIN_ID=Math.random().toString(36).slice(2,9);
+const SkyBus=(function(){
+  let bc=null;try{if('BroadcastChannel'in window)bc=new BroadcastChannel('skyway_bus');}catch(e){bc=null;}
+  const handlers=[];
+  function deliver(d){handlers.forEach(h=>{try{h(d);}catch(_){}});}
+  if(bc)bc.onmessage=e=>deliver(e.data);
+  return {
+    post:function(msg){try{if(bc)bc.postMessage(msg);}catch(e){}
+      try{localStorage.setItem(KEY+'_bus',JSON.stringify({t:Date.now()+Math.random(),from:WIN_ID,msg}));}catch(e){}},
+    on:function(fn){handlers.push(fn);},
+    _deliver:deliver, _hasBC:!!bc
+  };
+})();
+// second channel for browsers where BroadcastChannel doesn't cross file:// windows — storage events do
+window.addEventListener('storage',function(e){if(e.key===KEY+'_bus'&&e.newValue){try{const d=JSON.parse(e.newValue);if(d&&d.from!==WIN_ID)SkyBus._deliver(d.msg);}catch(_){}}});
 
 /* ---------- seeds ---------- */
 function seedZones(){return ['Fresh Meadows (Base)','Flushing','Bayside / Douglaston','Jamaica / Jamaica Estates','Kew Gardens Hills / Hillcrest','Forest Hills / Rego Park','Elmhurst / Corona','Astoria / Long Island City','Glen Oaks / Floral Park / Bellerose','Whitestone / College Point','Ozone Park / Howard Beach','LaGuardia Airport (LGA)','JFK Airport','Newark Airport (EWR)','Manhattan','Nassau County (West)'].map((name,i)=>({id:i+1,name}));}
@@ -14329,7 +14380,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','
 let STATE=load();
 let _lastRev='';
 function load(){try{const r=localStorage.getItem(KEY);if(r)return migrate(JSON.parse(r));}catch(e){}const s=migrate(defaultState());persist(s);return s;}
-function persist(s){try{localStorage.setItem(KEY,JSON.stringify(s||STATE));_lastRev=String(Date.now())+'.'+Math.random().toString(36).slice(2,6);localStorage.setItem(KEY+'_rev',_lastRev);}catch(e){toast('Could not save — storage may be full or blocked.',true);}}
+function persist(s){try{localStorage.setItem(KEY,JSON.stringify(s||STATE));_lastRev=String(Date.now())+'.'+Math.random().toString(36).slice(2,6);localStorage.setItem(KEY+'_rev',_lastRev);try{if(typeof SkyBus!=='undefined'&&SkyBus)SkyBus.post({type:'state',rev:_lastRev});}catch(e){}}catch(e){toast('Could not save — storage may be full or blocked.',true);}}
 let _saveT=null;
 function save(){clearTimeout(_saveT);_saveT=setTimeout(()=>{try{persist(STATE);}catch(e){}},400);}
 function saveNow(){clearTimeout(_saveT);persist(STATE);}
@@ -14535,24 +14586,62 @@ function applyScreenMode(){
   if(sub)sub.innerHTML='Pop-out Screen &middot; '+esc(label);
   if($('view-'+view))goTab(view);
 }
-function syncRefresh(){
-  if(SCREEN==='calls'){renderCallsScreen();return;}
-  if(SCREEN==='resv'){renderResvScreen();return;}
+let _syncT=null;
+function syncRefresh(){clearTimeout(_syncT);_syncT=setTimeout(_syncRefreshNow,220);}   // debounce bursts of remote saves
+function _syncRefreshNow(){
+  if(SCREEN==='calls'){renderCallsScreen();flashLive();return;}
+  if(SCREEN==='resv'){renderResvScreen();flashLive();return;}
+  if(SCREEN==='callerid'){flashLive();return;}                 // don't wipe the lookup box
   if($('view-dispatch')&&typeof refreshBoard==='function')refreshBoard();
-  const v=ACTIVE_VIEW;
-  if(v==='trips')renderTrips();
-  else if(v==='accounts')renderAccounts();
-  else if(v==='pricing')renderPricing();
-  else if(v==='fleet')renderFleet();
-  else if(v==='addrbook')renderAddrBook();
-  else if(v==='invoicing'){/* leave a built invoice alone */}
-  const sb=$('sbSync');if(sb){sb.textContent='↻ synced '+nowTime();setTimeout(()=>{if(sb)sb.textContent='';},2500);}
+  const v=ACTIVE_VIEW;                                         // re-render the open monitoring view so every screen stays live
+  try{
+    if(v==='trips')renderTrips();
+    else if(v==='accounts')renderAccounts();
+    else if(v==='fleet')renderFleet();
+    else if(v==='addrbook')renderAddrBook();
+    else if(v==='driveriq'&&typeof renderDriverIQ==='function')renderDriverIQ();
+    else if(v==='optimizer'&&typeof renderOptimizer==='function')renderOptimizer();
+    else if(v==='earnings'&&typeof renderEarnings==='function')renderEarnings();
+    else if(v==='biz'&&typeof renderBiz==='function')renderBiz();
+    else if(v==='history'&&typeof renderHistoryTable==='function')renderHistoryTable();
+    // pricing / invoicing / estimate / settings / maps left alone — they hold in-progress input
+  }catch(e){}
+  if(typeof renderCID==='function'&&$('view-dispatch')&&$('view-dispatch').classList.contains('active'))renderCID();
+  if(typeof renderSmartTips==='function'&&$('view-dispatch')&&$('view-dispatch').classList.contains('active'))renderSmartTips();
+  if(typeof updateStatusBar==='function')updateStatusBar();
+  flashLive();
 }
+function flashLive(){const sb=$('sbSync');if(sb){sb.innerHTML='<span class="live-dot"></span> live '+nowTime()+peerLabel();sb.classList.add('on');clearTimeout(sb._t);sb._t=setTimeout(()=>{if(sb){sb.classList.remove('on');}},2600);}}
 function reloadFromStorage(){try{const r=localStorage.getItem(KEY);if(r){STATE=migrate(JSON.parse(r));}}catch(e){}}
-window.addEventListener('storage',e=>{
-  if(e.key===KEY||e.key===KEY+'_rev'){const r=localStorage.getItem(KEY+'_rev');if(r&&r!==_lastRev){_lastRev=r;reloadFromStorage();syncRefresh();}}
-});
-setInterval(()=>{try{const r=localStorage.getItem(KEY+'_rev');if(r&&r!==_lastRev){_lastRev=r;reloadFromStorage();syncRefresh();}}catch(e){}},1500);
+function _pullIfNewer(){const r=localStorage.getItem(KEY+'_rev');if(r&&r!==_lastRev){_lastRev=r;reloadFromStorage();syncRefresh();return true;}return false;}
+window.addEventListener('storage',e=>{if(e.key===KEY||e.key===KEY+'_rev'){_pullIfNewer();}});
+setInterval(()=>{try{_pullIfNewer();}catch(e){}},1500);
+
+/* ---- presence: how many Skyway windows are open & talking ---- */
+const _peers={};
+function peerLabel(){const now=Date.now();const n=Object.keys(_peers).filter(k=>now-_peers[k].t<7000).length;return n?(' · '+(n+1)+' screens'):'';}
+function _announce(kind){SkyBus.post({type:'presence',kind:kind||'ping',id:WIN_ID,screen:SCREEN||'main'});}
+/* ---- command + state bus handler: pop-outs and the console act on each other's messages ---- */
+function handleBus(msg){
+  if(!msg||!msg.type)return;
+  if(msg.type==='state'){if(msg.rev&&msg.rev!==_lastRev){_lastRev=msg.rev;reloadFromStorage();syncRefresh();}return;}
+  if(msg.type==='presence'){if(msg.id&&msg.id!==WIN_ID){if(msg.kind==='bye'){delete _peers[msg.id];}else{const fresh=!_peers[msg.id];_peers[msg.id]={t:Date.now(),screen:msg.screen};if(msg.kind==='hello'&&fresh)_announce('ping');}flashLive();}return;}
+  if(msg.type==='cmd'){
+    if(SCREEN)return;                                          // only the main console executes commands from pop-outs
+    reloadFromStorage();
+    try{window.focus();}catch(e){}
+    if(msg.cmd==='openTrip'&&msg.id){goTab('dispatch');if(typeof editTrip==='function')editTrip(msg.id);toast('Opened #'+(msg.no||'')+' from a pop-out screen.');}
+    else if(msg.cmd==='newJob'){goTab('dispatch');if(typeof newTrip==='function')newTrip();}
+    else if(msg.cmd==='lookup'&&msg.phone){goTab('dispatch');if(typeof applyCaller==='function')applyCaller(msg.phone);toast('Caller '+msg.phone+' pulled up from a pop-out.');}
+    return;
+  }
+}
+SkyBus.on(handleBus);
+function pushToMain(cmd,id,no){SkyBus.post({type:'cmd',cmd:cmd,id:id,no:no});toast('Sent to the main dispatcher window.');}
+function pushLookupToMain(phone){SkyBus.post({type:'cmd',cmd:'lookup',phone:phone});toast('Sent '+phone+' to the dispatcher.');}
+_announce('hello');
+setInterval(()=>_announce('ping'),3000);
+window.addEventListener('beforeunload',()=>{try{SkyBus.post({type:'presence',kind:'bye',id:WIN_ID});}catch(e){}});
 
 /* ===================== THREE LIVE POP-OUT SCREENS ===================== */
 function callColor(t){
@@ -14573,6 +14662,7 @@ function callActions(t){
   if(t.status==='Booked')b+='<button class="btn btn-navy btn-sm" onclick="cycleStatus(\''+t.id+'\')">Dispatch</button> ';
   if(t.status==='Dispatched')b+='<button class="btn btn-go btn-sm" onclick="cycleStatus(\''+t.id+'\')">Done</button> ';
   b+='<button class="btn btn-ghost btn-sm" onclick="openEditOverlay(\''+t.id+'\')">Edit</button> ';
+  if(SCREEN)b+='<button class="btn btn-navy btn-sm" onclick="pushToMain(\'openTrip\',\''+t.id+'\',\''+t.dispatchNo+'\')" title="Open this job in the main dispatcher window">Open in console →</button> ';
   b+='<button class="btn btn-ghost btn-sm" onclick="duplicateTrip(\''+t.id+'\')" title="Double up — copy this call for a future time">Copy</button> ';
   if(t.status==='Booked'||t.status==='Dispatched'){
     b+='<button class="btn btn-sm" style="background:#dff3e6;border-color:#9bd3b0;color:#217346;" onclick="cancelTrip(\''+t.id+'\')">Cancel</button> ';
@@ -14622,6 +14712,7 @@ function renderResvScreen(){
       +'<td class="nt" title="'+esc(t.notes||'')+'">'+esc((t.notes||'').slice(0,40))+'</td>'
       +'<td class="acts"><button class="btn btn-navy btn-sm" onclick="cycleStatus(\''+t.id+'\')">Dispatch</button> '
       +'<button class="btn btn-ghost btn-sm" onclick="openEditOverlay(\''+t.id+'\')">Edit</button> '
+      +(SCREEN?'<button class="btn btn-navy btn-sm" onclick="pushToMain(\'openTrip\',\''+t.id+'\',\''+t.dispatchNo+'\')" title="Open in the main dispatcher window">Open in console →</button> ':'')
       +'<button class="btn btn-ghost btn-sm" onclick="duplicateTrip(\''+t.id+'\')" title="Double up for a future time">Copy</button> '
       +'<button class="btn btn-sm" style="background:#fde4ee;border-color:#e6a9c6;color:#b02360;" onclick="disregardTrip(\''+t.id+'\')">Disregard</button></td></tr>';};
   const tbl=(list,soon)=>list.length?'<div class="tbl-scroll"><table class="data sheet"><thead><tr><th>Time</th><th>#</th><th>Date</th><th>Pick-Up</th><th>Drop-Off</th><th>Passenger</th><th>Phone</th><th>Driver</th><th>Notes</th><th>Actions</th></tr></thead><tbody>'+list.map(o=>row(o,soon)).join('')+'</tbody></table></div>':'';
@@ -14662,6 +14753,7 @@ function ciLookup(){
   if(!driver&&!acct&&!known)h+='<div class="ci-card ci-new"><div class="ci-k">NEW / UNKNOWN NUMBER</div><h3>'+esc(num)+'</h3><div>Not in your customers, drivers, or call history — likely a new caller.</div></div>';
   if(trips.length)h+='<div class="panel" style="margin-top:10px;"><div class="panel-head">Recent trips on this number</div><div class="panel-body" style="padding:0;"><table class="data"><thead><tr><th>Date</th><th>Time</th><th>Pick-Up</th><th>Drop-Off</th><th>Fare</th><th>Status</th></tr></thead><tbody>'+trips.map(t=>'<tr><td>'+fmtDate(t.date)+'</td><td>'+esc(mil(t.time))+'</td><td>'+esc(shortAddr(t.puAddr))+'</td><td>'+esc(shortAddr(t.doAddr))+'</td><td class="num">'+money(t.fare)+'</td><td>'+esc(t.status)+'</td></tr>').join('')+'</tbody></table></div></div>';
   else if(acct||driver)h+='<div class="hint" style="margin-top:8px;">No past trips recorded on this number.</div>';
+  if(SCREEN&&!driver)h+='<div style="margin-top:10px;"><button class="btn btn-go" type="button" onclick="pushLookupToMain(\''+esc(num)+'\')">Start a job for this caller in the console &rarr;</button></div>';
   box.innerHTML=h;
 }
 /* ---- quick-edit overlay (autocomplete + trip-report spelling) ---- */

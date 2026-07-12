@@ -49,6 +49,21 @@ and import the file on the other machine.
 
 ## Recent improvements
 
+- **Pop-out screens that talk to each other (real-time)** — the console and every
+  pop-out (Calls, Reservations, Caller ID, Board, Wall Board, Map) now share
+  live state instantly over a cross-window bus (BroadcastChannel with a
+  localStorage fallback). Book, dispatch, assign or set a location in any window
+  and all the others update at once. Pop-outs can also *drive* the main console:
+  "Open in console →" on a call opens that job in the dispatcher, and "Start a
+  job for this caller →" on Caller ID pulls the number up on the booking form. A
+  live indicator in the status bar shows how many screens are connected. This is
+  the multi-monitor dispatcher setup that systems like iCabbi, Autocab, Limosys
+  and TaxiCaller center their consoles on.
+- **Fluid, easier-on-the-eyes UI** — smooth view transitions, button and row
+  micro-interactions, a softer layered background, refined focus outlines and
+  scrollbars, and a pulsing live-sync dot. All honor `prefers-reduced-motion`.
+
+
 - **Fleet Optimizer (new tab)** — maps where every driver is (or will be after
   their current drop-off) and chains each open call to the driver who reaches it
   with the fewest empty "deadhead" miles, so pickups come faster and cars stay
