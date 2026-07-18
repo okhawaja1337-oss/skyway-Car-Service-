@@ -505,6 +505,44 @@
   body.gold .statusbar{border-top:4px solid;border-image:repeating-conic-gradient(#d4af37 0 25%,#0e0f12 0 50%) 4;}
   body.gold .btn-go{text-transform:uppercase;letter-spacing:.4px;}
 
+  /* ============ LIGHT THEME — clean, soft, easy on the eyes ============ */
+  body.light{
+    --green:#2563a8; --green-dark:#1b4a80; --green-light:#eef4fb; --green-line:#c7dcf1;
+    --ink:#243039; --muted:#5f6b76; --line:#dde3ea; --line-soft:#eaeef3; --void:#c0392b;
+    --navy:#2563a8; --field:#ffffff; --paper:#ffffff; --app-bg:#eef1f5;
+    --grid:#e3e8ef; --head:#f2f6fb; --hover:#eef5ff; --sel:#d3e6f7;
+    background:linear-gradient(180deg,#f5f8fc 0%,#e9edf3 55%,#e4e9f0 100%);color:var(--ink);
+  }
+  body.light .cmdbar{background:linear-gradient(180deg,#2f72bd,#245ea6);border:1px solid #1c4b83;border-bottom:none;color:#fff;box-shadow:0 1px 6px rgba(20,60,110,.18);}
+  body.light .brand .mark{background:#fff;color:#245ea6;box-shadow:0 1px 3px rgba(0,0,0,.15);}
+  body.light .brand h1{color:#fff;} body.light .brand .sub,body.light .clock,body.light .clock .big{color:#dbe8f7;}
+  body.light .tabs{background:#fbfcfe;border-color:var(--line);}
+  body.light .tab{color:#4a5560;} body.light .tab:hover{color:var(--green-dark);background:#eef4fb;}
+  body.light .tab.active{color:var(--green-dark);border-bottom-color:var(--green);background:#fff;box-shadow:inset 0 -2px 0 var(--green);}
+  body.light .cmdtoolbar{background:#f6f9fc;border-color:var(--line);}
+  body.light .ct-btn{background:#fff;border-color:#cdd6e0;color:#33404c;box-shadow:0 1px 2px rgba(30,50,80,.05);}
+  body.light .ct-btn:hover{background:#eef4fb;border-color:var(--green);color:var(--green-dark);}
+  body.light .ct-btn.primary{background:linear-gradient(180deg,#2f72bd,#245ea6);border-color:#1c4b83;color:#fff;}
+  body.light .wrap{background:#fff;border-color:var(--line);box-shadow:0 1px 4px rgba(30,50,80,.08);}
+  body.light .panel{background:#fff;border-color:var(--line);border-radius:8px;box-shadow:0 1px 3px rgba(30,50,80,.06);}
+  body.light .panel-head{background:linear-gradient(180deg,#f6f9fc,#eef3f9);color:var(--green-dark);border-color:var(--line);border-radius:8px 8px 0 0;}
+  body.light .btn{background:#fff;border-color:#cbd4de;color:#33404c;border-radius:6px;box-shadow:0 1px 2px rgba(30,50,80,.06);}
+  body.light .btn:hover{background:#eef4fb;border-color:var(--green);color:var(--green-dark);}
+  body.light .btn-go{background:linear-gradient(180deg,#2f80d6,#2266b8);border-color:#1b4f8f;color:#fff;}
+  body.light .btn-go:hover{background:linear-gradient(180deg,#3a8ce0,#2a6fc0);box-shadow:0 2px 10px rgba(37,99,168,.28);}
+  body.light .btn-navy{background:#fff;border-color:var(--green);color:var(--green-dark);}
+  body.light .btn-navy:hover{background:var(--green-light);}
+  body.light input,body.light select,body.light textarea{background:#fff;border-color:#c4cdd8;border-radius:6px;color:var(--ink);}
+  body.light input:focus,body.light select:focus,body.light textarea:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(37,99,168,.14);}
+  body.light .readout{background:linear-gradient(180deg,#eef4fb,#e3eef8);border-color:var(--green-line);border-radius:8px;}
+  body.light .notice{background:#fff8e6;border-color:#f0dca0;color:#6b5518;border-radius:6px;}
+  body.light .stat{border-radius:8px;} body.light .opt-chain,body.light .ci-card{border-radius:8px;}
+  body.light table.data th,body.light table.sheet th{background:#f2f6fb;color:#3a4753;}
+  body.light .statusbar{background:#fff;border-color:var(--line);color:#5f6b76;}
+  body.light .badge,body.light .btn-sm{border-radius:20px;}
+  body.light .b-booked{background:#e1edfb;color:#1f5fbf;} body.light .b-dispatched{background:#fdf1cf;color:#8a6500;}
+  body.light .b-completed{background:#d8efdf;color:#1f7a43;} body.light .b-canceled{background:#fbe0dd;color:#c0392b;}
+
   /* ============ FLUID UI POLISH — smooth motion & softer feel (theme-agnostic) ============ */
   .btn,.ct-btn,.tab,.seg-btn,.badge,input,select,textarea,.dir-row,.ci-card,.opt-chain,.stat,.dot,.cellsel,td,th{
     transition:background-color .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease, transform .08s ease, opacity .16s ease;}
@@ -1158,11 +1196,20 @@ Flushing, NY 11366"></textarea></label>
           <label class="fld"><span class="lbl">Contact Phone</span><input type="text" id="s_cphone"></label>
         </div>
         <label class="fld"><span class="lbl">Parent / Footer Org</span><input type="text" id="s_org"></label>
-        <label class="fld"><span class="lbl">Appearance / theme</span><select id="s_theme"><option value="gold">Black &amp; Gold (modern)</option><option value="modern">Light (modern)</option><option value="classic">Classic Skyway (Windows-style)</option></select></label>
+        <label class="fld"><span class="lbl">Appearance / theme</span><select id="s_theme"><option value="modern">Light &mdash; clean &amp; easy on the eyes (recommended)</option><option value="gold">Black &amp; Gold (dark)</option><option value="classic">Classic Skyway (Windows-style)</option></select></label>
         <label class="fld" style="display:flex;flex-direction:row;align-items:center;gap:8px;"><input type="checkbox" id="s_autoaddr" style="width:auto;"><span class="lbl" style="margin:0;font-weight:600;">Auto-format addresses like the TLC trip reports (UPPERCASE, ST/AVE)</span></label>
         <label class="fld"><span class="lbl">Online Address-Search Key (optional, LocationIQ)</span><input type="text" id="s_geokey" placeholder="Leave blank to use the free service" autocomplete="off"></label>
         <label class="fld"><span class="lbl">Google Maps API key (optional)</span><input type="text" id="s_gmapkey" placeholder="Paste a Google key for Google search, maps &amp; driving distance" autocomplete="off"></label>
-        <div class="hint">With a Google key <b>and internet</b>: the address boxes search all of Google, the Trip Map &amp; Zone Map show a real Google map, and fares use Google driving distance. Without it (or offline) the free service is used. Needs a billing-enabled key from Google Cloud &mdash; keep a budget alert on it.</div>
+        <div class="hint">With a Google key <b>and internet</b>: the address boxes search all of Google, the Trip Map &amp; Zone Map show a real Google map, and fares use Google driving distance. Without it (or offline) the free service is used automatically &mdash; the app never freezes waiting on Google.</div>
+        <div class="notice" style="margin:10px 0;"><b>Make Google work in 4 steps:</b>
+          <ol style="margin:6px 0 0 18px;padding:0;">
+            <li>Run the app at <b>http://localhost:8080</b> &mdash; double-click <span class="mono">start-skyway.bat</span> (Windows) or <span class="mono">start-skyway.command</span> (Mac). Google keys do <b>not</b> work when the file is opened directly (a <span class="mono">file://</span> address).</li>
+            <li>In Google Cloud, enable these APIs: <b>Maps JavaScript API</b>, <b>Geocoding API</b>, <b>Places API</b>, <b>Directions API</b>.</li>
+            <li>Turn on <b>Billing</b> for the project (Google's free monthly credit covers small fleets).</li>
+            <li>On the key's <b>Website restrictions</b>, add <span class="mono">http://localhost:8080/*</span> (and your real web address if you host it).</li>
+          </ol></div>
+        <div class="btn-row"><button class="btn btn-navy" id="s_gtest" type="button">Test Google now</button><button class="btn btn-ghost" id="s_doctor2" type="button" onclick="goTab('map');setTimeout(mapDoctor,150)">Full connection check</button></div>
+        <div id="s_gtestOut" class="hint" style="margin-top:8px;"></div>
         <button class="btn btn-go" id="s_save">Save Settings</button>
       </div></div>
       <div class="panel"><div class="panel-head">Backup &amp; Data</div><div class="panel-body">
@@ -14036,7 +14083,8 @@ function migrate(s){
   if(!s.settings.gmapkey)s.settings.gmapkey='AIzaSyDe75rfpWy362R2AxklWjfkxKeiZHpW0p0';
   if(s.settings.classic==null)s.settings.classic=true;
   if(s.settings.autoaddr==null)s.settings.autoaddr=true;
-  if(s.settings.theme==null)s.settings.theme='gold';
+  if(s.settings.theme==null)s.settings.theme='modern';
+  if(!s.settings._lightDefault){if(s.settings.theme==='gold')s.settings.theme='modern';s.settings._lightDefault=true;}  // move to the lighter theme by default (one-time; re-pick any theme in Settings)
   if(s.settings.cardPct==null)s.settings.cardPct=0;
   if(s.settings.priceAdjust==null)s.settings.priceAdjust=0;
   if(s.settings.square==null)s.settings.square='https://app.squareup.com/dashboard/sales/virtual-terminal/checkout';
@@ -16798,18 +16846,18 @@ function loadGoogleMaps(cb){
   sc.async=true;sc.onerror=function(){_gLoading=false;_gQueue=[];toast('Google Maps could not load — check the key & internet. Using the free service.',true);};
   document.head.appendChild(sc);
 }
-function ensureGoogleReady(){return new Promise(res=>{if(!googleOn())return res(false);if(window.google&&window.google.maps&&window.google.maps.places)return res(true);loadGoogleMaps(()=>res(true));setTimeout(()=>res(!!(window.google&&window.google.maps)),9000);});}
+function ensureGoogleReady(){return new Promise(res=>{if(!googleOn())return res(false);if(window.google&&window.google.maps&&window.google.maps.places)return res(true);let done=false;const fin=v=>{if(!done){done=true;res(v);}};loadGoogleMaps(()=>fin(true));setTimeout(()=>fin(!!(window.google&&window.google.maps)),6000);});}
 function gBounds(){return new google.maps.LatLngBounds({lat:40.48,lng:-74.30},{lat:40.93,lng:-73.40});}
 function gGeo(){if(!_gGeocoder&&window.google)_gGeocoder=new google.maps.Geocoder();return _gGeocoder;}
 function gPlacesSvc(){if(!_gPlaces&&window.google)_gPlaces=new google.maps.places.PlacesService(document.createElement('div'));return _gPlaces;}
 function gAutoSvc(){if(!_gAuto&&window.google)_gAuto=new google.maps.places.AutocompleteService();return _gAuto;}
-function gPredict(q){return new Promise(res=>{const a=gAutoSvc();if(!a)return res([]);
-  a.getPlacePredictions({input:q,locationBias:gBounds(),componentRestrictions:{country:'us'}},(pr,st)=>{
-    if(st!=='OK'||!pr)return res([]);
-    res(pr.map(x=>({address:x.description,label:(x.structured_formatting&&x.structured_formatting.main_text)||x.description,sub:'Google',place_id:x.place_id,g:true})));});});}
-function gDetails(placeId){return new Promise(res=>{const sv=gPlacesSvc();if(!sv)return res(null);
-  sv.getDetails({placeId:placeId,fields:['formatted_address','geometry']},(d,st)=>{
-    if(st==='OK'&&d&&d.geometry){const l=d.geometry.location;res({address:d.formatted_address,lat:l.lat(),lng:l.lng()});}else res(null);});});}
+function gPredict(q){return new Promise(res=>{const a=gAutoSvc();if(!a)return res([]);let done=false;const fin=v=>{if(!done){done=true;res(v);}};setTimeout(()=>fin([]),4000);
+  a.getPlacePredictions({input:q,locationBias:gBounds(),componentRestrictions:{country:'us'}},(pr,st)=>{if(done)return;
+    if(st!=='OK'||!pr)return fin([]);
+    fin(pr.map(x=>({address:x.description,label:(x.structured_formatting&&x.structured_formatting.main_text)||x.description,sub:'Google',place_id:x.place_id,g:true})));});});}
+function gDetails(placeId){return new Promise(res=>{const sv=gPlacesSvc();if(!sv)return res(null);let done=false;const fin=v=>{if(!done){done=true;res(v);}};setTimeout(()=>fin(null),4000);
+  sv.getDetails({placeId:placeId,fields:['formatted_address','geometry']},(d,st)=>{if(done)return;
+    if(st==='OK'&&d&&d.geometry){const l=d.geometry.location;fin({address:d.formatted_address,lat:l.lat(),lng:l.lng()});}else fin(null);});});}
 function gRoute(points,wantAlts){return new Promise(res=>{if(!window.google)return res(null);
   const ds=new google.maps.DirectionsService();
   const wp=points.slice(1,-1).map(p=>({location:{lat:p.lat,lng:p.lng},stopover:true}));
@@ -16886,7 +16934,9 @@ function inMetro(c){return !!c&&c.lat>=40.45&&c.lat<=41.05&&c.lng>=-74.30&&c.lng
 async function gGeocode(q){try{await ensureGoogleReady();if(!(window.google&&google.maps&&google.maps.Geocoder))return null;
   const opt={address:q,region:'us',componentRestrictions:{country:'us'}};try{if(typeof gBounds==='function')opt.bounds=gBounds();}catch(e){}
   if(!window.gm_authFailure)window.gm_authFailure=function(){window._gAuthFail=true;};
-  return await new Promise(res=>{new google.maps.Geocoder().geocode(opt,(r,st)=>{window._gLastGeoStatus=st;if(st==='OK'&&r&&r[0]){const l=r[0].geometry.location;res({lat:l.lat(),lng:l.lng(),addr:(r[0].formatted_address||'')});}else res(null);});});}catch(e){window._gLastGeoStatus='LOAD_FAILED';return null;}}
+  return await new Promise(res=>{let done=false;
+    const t=setTimeout(()=>{if(!done){done=true;window._gLastGeoStatus='TIMEOUT';res(null);}},5000);   // don't let a stalled Google block the free-provider fallback
+    try{new google.maps.Geocoder().geocode(opt,(r,st)=>{if(done)return;done=true;clearTimeout(t);window._gLastGeoStatus=st;if(st==='OK'&&r&&r[0]){const l=r[0].geometry.location;res({lat:l.lat(),lng:l.lng(),addr:(r[0].formatted_address||'')});}else res(null);});}catch(e){if(!done){done=true;clearTimeout(t);res(null);}}});}catch(e){window._gLastGeoStatus='LOAD_FAILED';return null;}}
 async function geocode(addr){
   if(!addr)return null;
   let _fallbackApprox=null;
@@ -17464,7 +17514,27 @@ function csv(v){v=String(v==null?'':v);return /[",\n]/.test(v)?'"'+v.replace(/"/
 /* ============ SETTINGS / BACKUP ============ */
 function renderSettings(){const s=STATE.settings;$('s_name').value=s.name;$('s_addr').value=s.addr;$('s_city').value=s.city;$('s_phone').value=s.phone;$('s_base').value=s.base;$('s_ccu').value=Number(s.ccu||0).toFixed(2);$('s_contact').value=s.contact||'';$('s_title').value=s.title||'';$('s_cphone').value=s.cphone||'';$('s_org').value=s.org||'';$('s_geokey').value=s.geokey||'';$('s_gmapkey').value=s.gmapkey||'';$('s_theme').value=s.theme||'gold';$('s_autoaddr').checked=s.autoaddr!==false;$('s_cardpct').value=Number(s.cardPct||0);$('s_priceadj').value=Number(s.priceAdjust||0);$('s_square').value=s.square||'';if($('s_feed'))$('s_feed').value=s.feed||'';if($('callerCount'))$('callerCount').textContent=callerCountText();if($('routeCount'))$('routeCount').textContent=routeCountText();if($('histCount'))$('histCount').textContent=(HISTSEED&&HISTSEED.drivers)?(Object.keys(HISTSEED.drivers).length+' car numbers'+(HISTSEED.generated?' ('+HISTSEED.generated+')':'')):'none loaded';}
 $('s_save').addEventListener('click',()=>{Object.assign(STATE.settings,{name:$('s_name').value.trim(),addr:$('s_addr').value.trim(),city:$('s_city').value.trim(),phone:$('s_phone').value.trim(),base:$('s_base').value.trim(),ccu:Number($('s_ccu').value)||0,contact:$('s_contact').value.trim(),title:$('s_title').value.trim(),cphone:$('s_cphone').value.trim(),org:$('s_org').value.trim(),geokey:$('s_geokey').value.trim(),gmapkey:$('s_gmapkey').value.trim(),theme:$('s_theme').value,autoaddr:$('s_autoaddr').checked,cardPct:Number($('s_cardpct').value)||0,priceAdjust:Number($('s_priceadj').value)||0,square:$('s_square').value.trim(),feed:($('s_feed')?$('s_feed').value.trim():(STATE.settings.feed||''))});save();applyBrand();toast('Settings saved.');});
-function applyBrand(){$('brandName').textContent=STATE.settings.name||'SKYWAY CAR SERVICE';$('brandBase').textContent=STATE.settings.base||'';const th=STATE.settings.theme||'gold';document.body.classList.remove('classic','gold');if(th==='classic')document.body.classList.add('classic');else if(th==='gold')document.body.classList.add('gold');}
+function applyBrand(){if($('brandName'))$('brandName').textContent=STATE.settings.name||'SKYWAY CAR SERVICE';if($('brandBase'))$('brandBase').textContent=STATE.settings.base||'';const th=STATE.settings.theme||'gold';document.body.classList.remove('classic','gold','light');if(th==='classic')document.body.classList.add('classic');else if(th==='gold')document.body.classList.add('gold');else document.body.classList.add('light');}
+if($('s_theme'))$('s_theme').addEventListener('change',()=>{STATE.settings.theme=$('s_theme').value;save();applyBrand();toast('Theme applied.');});
+async function testGoogleNow(){const out=$('s_gtestOut');if(!out)return;
+  const key=(($('s_gmapkey')||{}).value||'').trim();
+  if(!key){out.innerHTML='No key entered — the free OpenStreetMap service is being used (that works too).';return;}
+  STATE.settings.gmapkey=key;save();                                   // use the typed key for the test
+  let pre='';if(location.protocol==='file:')pre='⚠ You opened the app as a <b>file://</b> page — Google keys are blocked there. Start it with <b>start-skyway</b> and use <b>http://localhost:8080</b>.<br>';
+  out.innerHTML=pre+'Testing Google…';
+  const ready=await Promise.race([ensureGoogleReady(),new Promise(r=>setTimeout(()=>r('t'),7000))]);
+  if(ready==='t'||!(window.google&&window.google.maps)){out.innerHTML=pre+'❌ Google script did not load — check internet/firewall and that the key is valid. The free service is being used meanwhile.';return;}
+  window._gAuthFail=false;window._gLastGeoStatus='';
+  const g=await gGeocode('77-35 164 St, Fresh Meadows, NY 11366');
+  if(g){out.innerHTML='✅ Google is working — search, maps and driving distance are live.';return;}
+  const st=window._gLastGeoStatus||'';
+  if(window._gAuthFail)out.innerHTML=pre+'❌ Key refused for this page. Add <b>http://localhost:8080/*</b> to the key’s <b>Website restrictions</b> and confirm <b>Billing</b> is on.';
+  else if(st==='REQUEST_DENIED')out.innerHTML=pre+'❌ <b>REQUEST_DENIED</b> — enable the <b>Geocoding API</b> in Google Cloud and include it in the key’s API restrictions.';
+  else if(st==='OVER_QUERY_LIMIT')out.innerHTML=pre+'❌ <b>OVER_QUERY_LIMIT</b> — turn on <b>Billing</b> for the project (or a daily cap was hit).';
+  else if(st==='TIMEOUT')out.innerHTML=pre+'❌ Google stalled (no reply in 5s). The app has switched to the free service so you can keep working — re-test when your connection is steady.';
+  else out.innerHTML=pre+'❌ Google returned <b>'+esc(st||'no status')+'</b>. The free service is being used meanwhile.';
+}
+if($('s_gtest'))$('s_gtest').addEventListener('click',testGoogleNow);
 $('b_export').addEventListener('click',()=>{download('skyway-backup-'+todayStr()+'.json',JSON.stringify(STATE,null,2),'application/json');toast('Backup downloaded. Also email a copy to yourself.');});
 $('b_import').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
   r.onload=()=>{try{const data=JSON.parse(r.result);if(!data.zones||!data.trips)throw 0;if(!confirm('Replace all current data with this backup?'))return;STATE=migrate(data);save();applyBrand();goTab('dispatch');toast('Backup restored.');}catch(err){toast('That file is not a valid Skyway backup.',true);}};

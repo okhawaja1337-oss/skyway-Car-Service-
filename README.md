@@ -8,17 +8,41 @@ book, pricing, call history) is stored locally in the browser via
 
 ## Running it
 
-Just open the file:
+**Recommended — run it at `http://localhost` (needed for Google Maps):**
 
-```
-# double-click index.html, or serve it locally:
-python3 -m http.server 8080
-# then visit http://localhost:8080/index.html
-```
+- **Windows:** double-click **`start-skyway.bat`**
+- **Mac:** double-click **`start-skyway.command`** (first time you may need
+  `chmod +x start-skyway.command`)
+- **Any OS, manually:** `python3 -m http.server 8080` then open
+  `http://localhost:8080/index.html`
+
+The launcher serves the app at `http://localhost:8080` and opens your browser.
+Keep the little window open while you work; close it to stop.
+
+You *can* also just double-click `index.html`, and booking, pricing, the board,
+invoicing and exports all work that way — **but a Google Maps API key will not
+work from a `file://` page** (Google blocks it), which is the usual cause of
+"Google is stalling". Running at `http://localhost` fixes that.
 
 Works in any modern browser (Chrome, Edge, Firefox, Safari). No accounts, no
 backend. To move a station to a new machine, use **Settings → Export / Backup**
 and import the file on the other machine.
+
+### Making Google Maps work
+
+Add your key in **Settings → Google Maps API key**, then click **Test Google
+now** for a plain-language pass/fail. To get a green result:
+
+1. Run the app at `http://localhost:8080` (the launchers above) — not `file://`.
+2. In Google Cloud, enable **Maps JavaScript API**, **Geocoding API**,
+   **Places API** and **Directions API**.
+3. Turn on **Billing** (Google's free monthly credit covers small fleets).
+4. On the key's **Website restrictions**, add `http://localhost:8080/*` (plus
+   your real domain if you host it).
+
+If Google is ever slow or blocked, the app now **falls back automatically** to a
+free service and never freezes waiting on it — everything else keeps working
+offline from your Address Book pins.
 
 ## What it does
 
@@ -49,6 +73,15 @@ and import the file on the other machine.
 
 ## Recent improvements
 
+- **Google reliability fix + a lighter UI** — Google geocoding/search/routing
+  calls now time out (5s) instead of hanging, so a slow or blocked Google can no
+  longer freeze the app; it falls back to the free service automatically. Added
+  one-click **launchers** (`start-skyway.bat` / `.command`) to run at
+  `http://localhost:8080` (the real fix for "Google is stalling", which is
+  caused by opening the app as a `file://` page), plus a **Test Google now**
+  button in Settings with exact, plain-language fixes. A new **Light theme**
+  (clean, soft, easy on the eyes) is now the default; Black & Gold and Classic
+  are still available in Settings.
 - **Pop-out screens that talk to each other (real-time)** — the console and every
   pop-out (Calls, Reservations, Caller ID, Board, Wall Board, Map) now share
   live state instantly over a cross-window bus (BroadcastChannel with a
