@@ -71,7 +71,63 @@ offline from your Address Book pins.
 - **Ctrl-K** (⌘K on Mac) jump to the global search from anywhere
 - Screen-pop from a phone system: open with `?caller=NUMBER&name=&pickup=&dropoff=`
 
-## Recent improvements
+## Simple mode, texting, driver phones, money (LimoGrid-based build, phase A)
+
+The console now opens in **Simple mode**: six big buttons across the top —
+**TODAY · BOOK · BOARD · DRIVERS · MONEY · SETTINGS** — with a "Needs you" strip
+(overdue pickups, long-running jobs, unpaid card rides), a 10-second **Undo**
+on every assign / cancel / complete, a first-run checklist, and a printable
+cheat sheet. Everything from before is still there under **Expert mode**
+(Settings → Expert mode, optionally behind a 4-digit owner PIN).
+
+New files sit beside `index.html` and plug in through six script tags; nothing
+from the original console was removed:
+
+| File | What it adds |
+|------|--------------|
+| `simple.js` / `simple.css` | The Simple-mode shell, Needs-you strip, Undo, checklist, Expert mode + PIN. |
+| `messages.js` | **Texting**: one "💬" button per job texts the driver the job sheet, or the passenger a *Booked / Driver assigned / On the way / Arrived / Receipt / Reminder / Canceled* message. Works today through the phone's own SMS app (`sms:` links from the business number on that phone); switches to Twilio automatically once the cloud is on. Templates are editable in Settings. |
+| `driver.html` + `driver.js` / `driver.css` / `manifest.webmanifest` / `sw.js` | The **driver phone page** (installable, works offline): job card, Accept / Pass, On my way → Arrived → Passenger on board → Done, one-tap Google / Apple / Waze navigation, call or text the passenger, GPS share, end-of-trip tolls/wait/cash. Any phone, any country. |
+| `driver-link.js` | "📱 Send to phone" on every job: builds the driver's job link and texts it. Driver GPS pins land in the Driver IQ / Optimizer maps. |
+| `region.js` | **Region card** in Settings: country, currency, phone format, miles/km, time zone — the NYC-only hard-codes become settings. |
+| `money.js` | **Money home** (MONEY section): unpaid rides, *Charge in Square*, *Send pay link*, *Mark paid / cash*, KPI tiles; payment status is now recorded on each trip. |
+| `sync.js` | **Cloud sync** (off by default): mirrors every record to Supabase so several computers and phones share one live board; includes a to-the-cent reconciliation report before you rely on it. |
+| `supabase/` | The backend: `schema.sql` (tables, row-level security, driver guards, sequences) and Edge Functions for SMS in/out, job offers, Square charges / links / invoices / webhooks, geocoding and routing. |
+| `docs/PRODUCT-DESIGN.md` | The full LimoGrid-based product design, roadmap and costs. |
+| `docs/SETUP.md` | Plain-English owner guide: Cloudflare Pages, Supabase, Twilio (business number), Square, Google Cloud, and how to switch each on — and off. |
+| `docs/OWNER-DECISIONS.md` | The 14 decisions only the owner can make, each with a recommended default. |
+
+### Fixes from the full audit (82 findings reviewed)
+
+- **Dates/times:** "today" is now the local calendar date (evening bookings no
+  longer slip a day); `ASAP`, `9:30` and `3:40 pm` times are understood
+  everywhere (board, Smart Tips, Optimizer, edit form).
+- **Data safety:** a pending edit can no longer be wiped by another window
+  saving at the same moment; stale pop-outs never overwrite the console; the
+  cross-window bus delivers each message exactly once; the first-run save no
+  longer throws; Reset All Data installs a fully migrated clean state.
+- **Money:** the Settings "extra credit-card %" is honored; invoices bill
+  **Completed** rides only, include tips, carry an invoice number and date, are
+  saved (`STATE.invoices`) and never bill the same ride twice; today's totals
+  exclude No-Show / Disregard; a shared-ride + congestion-zone estimate no
+  longer shows NaN; imported trips with an unknown account bill as Cash (the
+  account name is kept in notes); editing a trip keeps its tip.
+- **Security:** single quotes are escaped in rendered text; CSV / TLC / settlement
+  exports neutralize spreadsheet formula injection; the Square URL must be
+  `https:`; external links open with `noopener`; the Google key is seeded once
+  and stays cleared if you clear it.
+- **Usability:** the main button says **Book Trip**; the finish step is
+  **Complete** everywhere; new calls default to **ASAP**; F1–F5 keep their
+  toolbar meaning unless a caller is actually waiting on that Caller-ID line;
+  driver phone numbers are tap-to-call / tap-to-text; the edit dialog is a real
+  dialog (focus, Escape); toasts are announced to screen readers; the address
+  book keeps thousands of pins instead of being cut to 800; the map container
+  survives going offline; the Call History shows a plain message in browsers
+  that can't unpack the built-in archive.
+- **Phones:** no sideways page scroll at 390 px, 16 px inputs (no iOS zoom),
+  finger-sized buttons on touch screens.
+
+## Earlier improvements
 
 - **Google reliability fix + a lighter UI** — Google geocoding/search/routing
   calls now time out (5s) instead of hanging, so a slow or blocked Google can no

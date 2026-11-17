@@ -578,6 +578,25 @@
     html{scroll-behavior:auto;}
     .btn:hover,.ct-btn:hover,.btn:active,.ct-btn:active,.stat:hover{transform:none;}
   }
+  /* ---- phones & touch: no iOS auto-zoom, real finger-sized targets, no sideways page scroll ---- */
+  @media (max-width:760px){
+    body{padding:6px;}
+    input,select,textarea,.cellsel{font-size:16px;}
+    .cmdbar{flex-wrap:wrap;gap:8px;}
+    .cmdbar .gsearch-wrap,.cmdbar #gsearch{flex:1 1 100%;max-width:none;}
+    .clock{text-align:left;}
+    .view,.panel,.panel-body,.sheet-wrap,.table-wrap{max-width:100%;min-width:0;}
+    .view-active,.view{overflow-x:hidden;}
+    table.sheet,table.data{display:block;overflow-x:auto;max-width:100%;}
+    .acts{white-space:normal;}
+  }
+  @media (pointer:coarse){
+    .btn,.tab,.sb-btn{min-height:44px;}
+    .btn-sm{min-height:36px;padding:7px 12px;font-size:13px;}
+    .acts .btn{margin:2px 2px;}
+    .cellsel{padding:7px 6px;font-size:14px;min-height:36px;}
+    .close,.ct-x,[onclick^="closeEditOvl"]{min-width:36px;min-height:36px;display:inline-flex;align-items:center;justify-content:center;}
+  }
 </style>
 </head>
 <body>
@@ -634,7 +653,7 @@
   <!-- ============ DISPATCH ============ -->
   <section class="view active" id="view-dispatch">
     <div class="helpbar" id="helpBar">
-      <div><b>Quick start:</b> A call comes in → press <b>F1–F6</b> (or the <b>New job</b> button) to open it. Fill the pickup &amp; drop-off — the price fills in by itself. Pick a <b>Driver</b>, press <b>Dispatch</b> when they leave, <b>Drop Off</b> when done. Stuck? The green <b>Smart Tips</b> box tells you what to do next, and the <b>search bar up top</b> finds any job, caller, or account. Full guide: <b>? Help</b>.</div>
+      <div><b>Quick start:</b> A call comes in → press <b>F1–F6</b> (or the <b>New job</b> button) to open it. Fill the pickup &amp; drop-off — the price fills in by itself. Pick a <b>Driver</b>, press <b>Dispatch</b> when they leave, <b>Complete</b> when done. Stuck? The green <b>Smart Tips</b> box tells you what to do next, and the <b>search bar up top</b> finds any job, caller, or account. Full guide: <b>? Help</b>.</div>
       <button class="x" onclick="dismissHelpBar()" title="Hide this">&times;</button>
     </div>
     <div class="panel smart-wrap"><div class="panel-head">&#128161; Smart Tips &mdash; what to do now</div><div class="panel-body" style="padding:8px 12px;"><div id="smartTips"></div></div></div>
@@ -706,7 +725,7 @@
             </div>
             <label class="fld"><span class="lbl">Notes</span><textarea id="d_notes" placeholder="Flight #, special needs, gate, etc."></textarea></label>
             <div class="btn-row">
-              <button class="btn btn-go" id="d_save">Save Trip</button>
+              <button class="btn btn-go" id="d_save">Book Trip</button>
               <button class="btn btn-navy" id="d_calc">Calculate Fare</button>
               <button class="btn btn-ghost" id="d_clear">Clear</button>
             </div>
@@ -721,7 +740,7 @@
                 <div class="tot"><span>Trip total</span><span class="mono" id="r_total">$0.00</span></div>
               </div>
               <button class="btn btn-navy btn-sm" type="button" onclick="chargeSquareFromReadout()" style="margin-top:8px;">&#128179; Charge on Square</button>
-              <div class="hint" id="r_dist" style="color:#aebfe0;margin-top:8px;"></div>
+              <div class="hint" id="r_dist" style="margin-top:8px;"></div>
             </div>
           </div>
         </div>
@@ -1170,8 +1189,8 @@ Flushing, NY 11366"></textarea></label>
   <div id="bizAlert" style="margin:10px 0;"></div>
   <div id="bizKpis" style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;"></div>
   <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;">
-    <div style="flex:2;min-width:420px;"><h3 style="margin:8px 0 4px;">Monthly P&amp;L — budget vs actual</h3><div id="bizPnl"></div></div>
-    <div style="flex:1;min-width:320px;"><h3 style="margin:8px 0 4px;">Growth levers</h3><div id="bizLevers"></div>
+    <div style="flex:2;min-width:min(420px,100%);"><h3 style="margin:8px 0 4px;">Monthly P&amp;L — budget vs actual</h3><div id="bizPnl" style="overflow-x:auto;"></div></div>
+    <div style="flex:1;min-width:min(320px,100%);"><h3 style="margin:8px 0 4px;">Growth levers</h3><div id="bizLevers"></div>
       <h3 style="margin:14px 0 4px;">Compliance calendar</h3><div id="bizComp"></div></div>
   </div>
 </section>
@@ -1272,7 +1291,7 @@ Flushing, NY 11366"></textarea></label>
   <div class="bar"><button class="btn btn-go" onclick="window.print()">Print / Save as PDF</button><button class="btn btn-ghost" onclick="closePrint()">Close</button></div>
   <div class="sheet" id="printSheet"></div>
 </div>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <div class="statusbar" id="statusBar">
   <span class="sb-cell"><span class="dot" id="sbDot"></span><span id="sbNet">Working offline</span></span>
@@ -1283,7 +1302,7 @@ Flushing, NY 11366"></textarea></label>
   <span class="sb-cell" id="sbClock"></span>
 </div>
 
-<div class="help-overlay" id="helpOverlay" onclick="if(event.target===this)toggleHelp(false)">
+<div class="help-overlay" id="helpOverlay" role="dialog" aria-modal="true" aria-label="Help" onclick="if(event.target===this)toggleHelp(false)">
   <div class="help-card">
     <div class="hh">How to use Skyway &mdash; the 4 basics <button class="x" onclick="toggleHelp(false)" title="Close">&times;</button></div>
     <div class="hb">
@@ -14038,17 +14057,25 @@ const WIN_ID=Math.random().toString(36).slice(2,9);
 const SkyBus=(function(){
   let bc=null;try{if('BroadcastChannel'in window)bc=new BroadcastChannel('skyway_bus');}catch(e){bc=null;}
   const handlers=[];
-  function deliver(d){handlers.forEach(h=>{try{h(d);}catch(_){}});}
-  if(bc)bc.onmessage=e=>deliver(e.data);
+  // every message travels on BOTH channels (BroadcastChannel + a localStorage key) so it reaches
+  // file:// windows too; the envelope id makes sure each window handles it exactly once.
+  const seen=[];
+  function deliverEnv(env){
+    if(!env||!env.msg||env.from===WIN_ID)return;
+    if(env.id){if(seen.indexOf(env.id)>=0)return;seen.push(env.id);if(seen.length>200)seen.splice(0,100);}
+    handlers.forEach(h=>{try{h(env.msg);}catch(_){}});
+  }
+  if(bc)bc.onmessage=e=>deliverEnv(e.data);
   return {
-    post:function(msg){try{if(bc)bc.postMessage(msg);}catch(e){}
-      try{localStorage.setItem(KEY+'_bus',JSON.stringify({t:Date.now()+Math.random(),from:WIN_ID,msg}));}catch(e){}},
+    post:function(msg){const env={id:Date.now().toString(36)+Math.random().toString(36).slice(2,8),from:WIN_ID,msg};
+      try{if(bc)bc.postMessage(env);}catch(e){}
+      try{localStorage.setItem(KEY+'_bus',JSON.stringify(env));}catch(e){}},
     on:function(fn){handlers.push(fn);},
-    _deliver:deliver, _hasBC:!!bc
+    _deliver:deliverEnv, _hasBC:!!bc
   };
 })();
 // second channel for browsers where BroadcastChannel doesn't cross file:// windows — storage events do
-window.addEventListener('storage',function(e){if(e.key===KEY+'_bus'&&e.newValue){try{const d=JSON.parse(e.newValue);if(d&&d.from!==WIN_ID)SkyBus._deliver(d.msg);}catch(_){}}});
+window.addEventListener('storage',function(e){if(e.key===KEY+'_bus'&&e.newValue){try{SkyBus._deliver(JSON.parse(e.newValue));}catch(_){}}});
 
 /* ---------- seeds ---------- */
 function seedZones(){return ['Fresh Meadows (Base)','Flushing','Bayside / Douglaston','Jamaica / Jamaica Estates','Kew Gardens Hills / Hillcrest','Forest Hills / Rego Park','Elmhurst / Corona','Astoria / Long Island City','Glen Oaks / Floral Park / Bellerose','Whitestone / College Point','Ozone Park / Howard Beach','LaGuardia Airport (LGA)','JFK Airport','Newark Airport (EWR)','Manhattan','Nassau County (West)'].map((name,i)=>({id:i+1,name}));}
@@ -14081,7 +14108,7 @@ function migrate(s){
   if(!s.settings.rate)s.settings.rate=defaultRate();
   if(!s.settings.compare)s.settings.compare=defaultCompare();
   if(s.settings.geokey==null)s.settings.geokey='';
-  if(!s.settings.gmapkey)s.settings.gmapkey='AIzaSyDe75rfpWy362R2AxklWjfkxKeiZHpW0p0';
+  if(s.settings.gmapkey==null)s.settings.gmapkey='AIzaSyDe75rfpWy362R2AxklWjfkxKeiZHpW0p0';   // seed once; a key the owner cleared stays cleared
   if(s.settings.classic==null)s.settings.classic=true;
   if(s.settings.autoaddr==null)s.settings.autoaddr=true;
   if(s.settings.theme==null)s.settings.theme='modern';
@@ -14089,6 +14116,7 @@ function migrate(s){
   if(s.settings.cardPct==null)s.settings.cardPct=0;
   if(s.settings.priceAdjust==null)s.settings.priceAdjust=0;
   if(s.settings.square==null)s.settings.square='https://app.squareup.com/dashboard/sales/virtual-terminal/checkout';
+  if(!Array.isArray(s.invoices))s.invoices=[];
   if(s.settings.feed==null)s.settings.feed='';
   if(s.settings.histMap==null)s.settings.histMap={};
   if(s.settings.area20Flat==null)s.settings.area20Flat=12;
@@ -14418,23 +14446,24 @@ function ensureSeedAddrs(s){
 /* ---------- helpers ---------- */
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function money(n){n=Number(n)||0;return '$'+n.toFixed(2);}
-function todayStr(){return new Date().toISOString().slice(0,10);}
+function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}  // local calendar date (not UTC)
 function nowTime(){return new Date().toTimeString().slice(0,5);}
 function whole(n){return Math.round(Number(n)||0);}
 function mil(t){t=(t||'').trim();if(!t)return '';const m=t.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);if(m){let h=+m[1];const ap=m[3].toLowerCase();if(ap==='pm'&&h<12)h+=12;if(ap==='am'&&h===12)h=0;return String(h).padStart(2,'0')+':'+m[2];}return t;}
 function fmtDate(s){if(!s)return '';const p=s.split('-');return p.length===3?p[1]+'/'+p[2]+'/'+p[0]:s;}
 function ymd(s){return s?s.replace(/-/g,''):'';}
-function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
-let STATE=load();
 let _lastRev='';
+let _saveT=null,_dirty=false;
+let STATE=load();
 function load(){try{const r=localStorage.getItem(KEY);if(r)return migrate(JSON.parse(r));}catch(e){}const s=migrate(defaultState());persist(s);return s;}
-function persist(s){try{localStorage.setItem(KEY,JSON.stringify(s||STATE));_lastRev=String(Date.now())+'.'+Math.random().toString(36).slice(2,6);localStorage.setItem(KEY+'_rev',_lastRev);try{if(typeof SkyBus!=='undefined'&&SkyBus)SkyBus.post({type:'state',rev:_lastRev});}catch(e){}}catch(e){toast('Could not save — storage may be full or blocked.',true);}}
-let _saveT=null;
-function save(){clearTimeout(_saveT);_saveT=setTimeout(()=>{try{persist(STATE);}catch(e){}},400);}
-function saveNow(){clearTimeout(_saveT);persist(STATE);}
-window.addEventListener('beforeunload',saveNow);
-document.addEventListener('visibilitychange',()=>{if(document.hidden)saveNow();});
+function persist(s){try{localStorage.setItem(KEY,JSON.stringify(s||STATE));_dirty=false;_lastRev=String(Date.now())+'.'+Math.random().toString(36).slice(2,6);localStorage.setItem(KEY+'_rev',_lastRev);try{if(typeof SkyBus!=='undefined'&&SkyBus)SkyBus.post({type:'state',rev:_lastRev});}catch(e){}}catch(e){try{toast('Could not save — storage may be full or blocked.',true);}catch(_){}}}
+function save(){_dirty=true;clearTimeout(_saveT);_saveT=setTimeout(()=>{_saveT=null;try{persist(STATE);}catch(e){}},400);}
+function saveNow(){clearTimeout(_saveT);_saveT=null;persist(STATE);}
+// only write on hide/unload when this window actually changed something — a stale pop-out must never overwrite the console
+window.addEventListener('beforeunload',()=>{if(_dirty)saveNow();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&_dirty)saveNow();});
 function toast(m,w){const t=$('toast');t.textContent=m;t.className='toast show'+(w?' warn':'');setTimeout(()=>{t.className='toast'+(w?' warn':'');},2600);}
 
 function zoneName(id){const z=STATE.zones.find(z=>z.id==id);return z?z.name:'';}
@@ -14662,7 +14691,9 @@ function _syncRefreshNow(){
 }
 function flashLive(){const sb=$('sbSync');if(sb){sb.innerHTML='<span class="live-dot"></span> live '+nowTime()+peerLabel();sb.classList.add('on');clearTimeout(sb._t);sb._t=setTimeout(()=>{if(sb){sb.classList.remove('on');}},2600);}}
 function reloadFromStorage(){try{const r=localStorage.getItem(KEY);if(r){STATE=migrate(JSON.parse(r));}}catch(e){}}
-function _pullIfNewer(){const r=localStorage.getItem(KEY+'_rev');if(r&&r!==_lastRev){_lastRev=r;reloadFromStorage();syncRefresh();return true;}return false;}
+function _pullIfNewer(){const r=localStorage.getItem(KEY+'_rev');if(r&&r!==_lastRev){
+  if(_dirty){saveNow();return false;}   // we have unsaved edits: flush them first instead of throwing them away
+  _lastRev=r;reloadFromStorage();syncRefresh();return true;}return false;}
 window.addEventListener('storage',e=>{if(e.key===KEY||e.key===KEY+'_rev'){_pullIfNewer();}});
 setInterval(()=>{try{_pullIfNewer();}catch(e){}},1500);
 
@@ -14673,7 +14704,7 @@ function _announce(kind){SkyBus.post({type:'presence',kind:kind||'ping',id:WIN_I
 /* ---- command + state bus handler: pop-outs and the console act on each other's messages ---- */
 function handleBus(msg){
   if(!msg||!msg.type)return;
-  if(msg.type==='state'){if(msg.rev&&msg.rev!==_lastRev){_lastRev=msg.rev;reloadFromStorage();syncRefresh();}return;}
+  if(msg.type==='state'){if(msg.rev&&msg.rev!==_lastRev){if(_dirty){saveNow();return;}_lastRev=msg.rev;reloadFromStorage();syncRefresh();}return;}
   if(msg.type==='presence'){if(msg.id&&msg.id!==WIN_ID){if(msg.kind==='bye'){delete _peers[msg.id];}else{const fresh=!_peers[msg.id];_peers[msg.id]={t:Date.now(),screen:msg.screen};if(msg.kind==='hello'&&fresh)_announce('ping');}flashLive();}return;}
   if(msg.type==='cmd'){
     if(SCREEN)return;                                          // only the main console executes commands from pop-outs
@@ -14696,20 +14727,20 @@ window.addEventListener('beforeunload',()=>{try{SkyBus.post({type:'presence',kin
 function callColor(t){
   if(t.status==='Canceled')return {label:'Canceled',cls:'c-green'};
   if(t.status==='Disregard'||t.status==='No-Show')return {label:'Disregard',cls:'c-pink'};
-  if(t.status==='Completed')return {label:'Done',cls:'c-orange'};
+  if(t.status==='Completed')return {label:'Completed',cls:'c-orange'};
   if(t.status==='Dispatched')return {label:'Dispatched',cls:'c-yellow'};
   return {label:(t.driverId?'Assigned (not dispatched)':'Not dispatched'),cls:'c-blue'};
 }
 function callLegend(){return '<div class="legend">'
  +'<span class="sw"><i class="dot" style="background:#e8f0fb"></i>Not dispatched</span>'
  +'<span class="sw"><i class="dot" style="background:#fff6d6"></i>Dispatched</span>'
- +'<span class="sw"><i class="dot" style="background:#ffe9d2"></i>Done</span>'
+ +'<span class="sw"><i class="dot" style="background:#ffe9d2"></i>Completed</span>'
  +'<span class="sw"><i class="dot" style="background:#dff3e6"></i>Canceled</span>'
  +'<span class="sw"><i class="dot" style="background:#fde4ee"></i>Disregard</span></div>';}
 function callActions(t){
   let b='';
   if(t.status==='Booked')b+='<button class="btn btn-navy btn-sm" onclick="cycleStatus(\''+t.id+'\')">Dispatch</button> ';
-  if(t.status==='Dispatched')b+='<button class="btn btn-go btn-sm" onclick="cycleStatus(\''+t.id+'\')">Done</button> ';
+  if(t.status==='Dispatched')b+='<button class="btn btn-go btn-sm" onclick="cycleStatus(\''+t.id+'\')">Complete</button> ';
   b+='<button class="btn btn-ghost btn-sm" onclick="openEditOverlay(\''+t.id+'\')">Edit</button> ';
   if(SCREEN)b+='<button class="btn btn-navy btn-sm" onclick="pushToMain(\'openTrip\',\''+t.id+'\',\''+t.dispatchNo+'\')" title="Open this job in the main dispatcher window">Open in console →</button> ';
   b+='<button class="btn btn-ghost btn-sm" onclick="duplicateTrip(\''+t.id+'\')" title="Double up — copy this call for a future time">Copy</button> ';
@@ -14795,7 +14826,7 @@ function ciLookup(){
   const driver=STATE.drivers.find(x=>phoneDigits(x.phone)&&phoneDigits(x.phone).endsWith(last10));
   const trips=STATE.trips.filter(t=>phoneDigits(t.phone)&&phoneDigits(t.phone).endsWith(last10)).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')).slice(0,8);
   let h='';
-  if(driver)h+='<div class="ci-card ci-driver"><div class="ci-k">DRIVER CALLING</div><h3>'+esc(driver.name)+'</h3><div>'+esc(driver.phone||'')+(driver.tlc?' · TLC '+esc(driver.tlc):'')+'</div></div>';
+  if(driver)h+='<div class="ci-card ci-driver"><div class="ci-k">DRIVER CALLING</div><h3>'+esc(driver.name)+'</h3><div>'+(typeof telLink==='function'?telLink(driver.phone):esc(driver.phone||''))+(driver.tlc?' · TLC '+esc(driver.tlc):'')+'</div></div>';
   if(acct)h+='<div class="ci-card ci-cust"><div class="ci-k">CUSTOMER</div><h3>#'+esc(acct.number)+' '+esc(acct.name)+'</h3><div>'+esc(acct.phone||'')+(acct.addr?' · '+esc(acct.addr):'')+'</div>'+(acct.contact?'<div>Contact: '+esc(acct.contact)+'</div>':'')+'</div>';
   const known=lookupCaller(num);
   if(known&&!acct)h+='<div class="ci-card ci-cust"><div class="ci-k">KNOWN CUSTOMER (history)</div><h3>'+esc(num)+'</h3><div>'+known.n+' past trip'+(known.n===1?'':'s')+(known.last?' · last '+esc(known.last):'')+(known.f?' · usually $'+esc(known.f):'')+'</div><div>Usually: '+esc(known.pu||'')+(known.do?' &rarr; '+esc(known.do):'')+'</div></div>';
@@ -14828,7 +14859,8 @@ function openEditOverlay(id){
    +'<label class="fld"><span class="lbl">Notes</span><textarea id="eo_notes">'+esc(t.notes||'')+'</textarea></label>'
    +'<div class="btn-row"><button class="btn btn-go" onclick="saveEditOvl()">Save</button><button class="btn btn-ghost" onclick="closeEditOvl()">Cancel</button></div></div>';
   $('eo_drv').value=t.driverId||'';$('eo_veh').value=t.vehicleId||'';if($('eo_pay'))$('eo_pay').value=t.payType||'Cash';
-  $('editOvl').hidden=false;
+  const ovl=$('editOvl');ovl.hidden=false;ovl.setAttribute('role','dialog');ovl.setAttribute('aria-modal','true');ovl.setAttribute('aria-label','Edit call #'+t.dispatchNo);
+  setTimeout(()=>{const f=$('eo_pass');if(f)f.focus();},30);
   attachAC($('eo_pu'));attachAC($('eo_do'));
   ['eo_pu','eo_do'].forEach(id=>{const el=$(id);if(el)el.addEventListener('blur',()=>autoFmt(el));});
 }
@@ -14872,13 +14904,17 @@ window.addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&(e.key==='k'||e.key==='K')){e.preventDefault();const g=$('gsearch');if(g){g.focus();g.select();if(typeof globalSearch==='function')globalSearch();}return;}
   const typing=e.target&&/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
   if(typing&&e.key!=='F1'&&e.key!=='Escape'&&e.key!=='F2'&&e.key!=='F3')return;
+  // F1–F6 belong to the Caller-ID lines whenever a caller is waiting on that line (see the document handler below)
+  if(/^F[1-6]$/.test(e.key)&&typeof CIDSTATE!=='undefined'&&CIDSTATE&&CIDSTATE[+e.key.slice(1)-1])return;
   switch(e.key){
     case 'F1':e.preventDefault();toggleHelp();break;
     case 'F2':e.preventDefault();newTrip();break;
     case 'F3':e.preventDefault();findTrips();break;
     case 'F4':e.preventDefault();goTab('dispatch');refreshBoard();break;
     case 'F5':e.preventDefault();refreshBoard();toast('Board refreshed.');break;
-    case 'Escape':if($('helpOverlay')&&$('helpOverlay').classList.contains('open'))toggleHelp(false);break;
+    case 'Escape':
+      if($('editOvl')&&!$('editOvl').hidden){closeEditOvl();break;}
+      if($('helpOverlay')&&$('helpOverlay').classList.contains('open'))toggleHelp(false);break;
   }
 });
 function renderView(v){
@@ -14976,9 +15012,11 @@ function cpBlank(){const n=_cpNum;closeEditOvl();goTab('dispatch');
   if($('d_phone'))$('d_phone').value=n;if($('d_caller'))$('d_caller').value=n;
   const el=$('d_puAddr');if(el)setTimeout(function(){el.focus();},60);}
 document.addEventListener('keydown',function(e){
-  if(/^F[1-6]$/.test(e.key)){const idx=+e.key.slice(1)-1;e.preventDefault();
-    if(CIDSTATE[idx]){cidNewJob(idx);}
-    else{goTab('dispatch');const inp=document.querySelectorAll('.cid-in')[idx];if(inp){inp.focus();}toast('Line '+(idx+1)+': type the caller\u2019s number, then Enter to open the job.');}
+  // Caller-ID lines: F1\u2013F6 open a job from that line only when a caller is on it; otherwise
+  // F1\u2013F5 keep their toolbar meaning (Help / New / Find / Board / Refresh) and F6 focuses line 6.
+  if(/^F[1-6]$/.test(e.key)){const idx=+e.key.slice(1)-1;
+    if(CIDSTATE[idx]){e.preventDefault();cidNewJob(idx);}
+    else if(e.key==='F6'){e.preventDefault();goTab('dispatch');const inp=document.querySelectorAll('.cid-in')[idx];if(inp){inp.focus();}toast('Line 6: type the caller\u2019s number, then Enter to open the job.');}
   }
 });
 /* ============ CLASSIC JOBS VIEW (BaseI "Skyway Jobs" replica) ============ */
@@ -15054,7 +15092,7 @@ function renderSmartTips(){
       tips.push({p:1,icon:'\u23f0',text:'Job #'+t.dispatchNo+' '+esc(shortAddr(t.puAddr))+' \u2192 '+esc(shortAddr(t.doAddr))+' '+(dt?'is due '+esc(mil(t.time)):'is ASAP')+' with no driver.'+(best?' Best fit: <b>'+esc(best.d.name)+'</b>.':''),
         act:best?{label:'Assign '+esc(best.d.name.split(' ')[0]),fn:"diqAssign('"+t.id+"','"+best.d.id+"')"}:{label:'Open',fn:"editTrip('"+t.id+"')"}});}});
   STATE.trips.filter(t=>t.status==='Booked'&&!(Number(t.fare)>0)).forEach(t=>tips.push({p:2,icon:'\ud83d\udcb2',text:'Job #'+t.dispatchNo+' has no price yet.',act:{label:'Price it',fn:"editTrip('"+t.id+"')"}}));
-  STATE.trips.filter(t=>t.status==='Dispatched').forEach(t=>{const dt=pickupDT(t);if(dt&&(now-dt)>90*60000)tips.push({p:3,icon:'\u2705',text:'Job #'+t.dispatchNo+' has been out over 90 min \u2014 mark it done?',act:{label:'Drop off',fn:"cycleStatus('"+t.id+"')"}});});
+  STATE.trips.filter(t=>t.status==='Dispatched').forEach(t=>{const dt=pickupDT(t);if(dt&&(now-dt)>90*60000)tips.push({p:3,icon:'\u2705',text:'Job #'+t.dispatchNo+' has been out over 90 min \u2014 mark it complete?',act:{label:'Complete',fn:"cycleStatus('"+t.id+"')"}});});
   try{const idle=STATE.drivers.filter(d=>d.active!==false&&!diqBusyNow(d));if(idle.length){const dm=diqDemandNow();if(dm.zones.length)tips.push({p:4,icon:'\ud83d\ude97',text:idle.length+' idle driver'+(idle.length>1?'s':'')+'. Busiest area now: <b>'+esc(dm.zones[0][0])+'</b>.',act:{label:'Open Driver IQ',fn:"goTab('driveriq')"}});}}catch(e){}
   tips.sort((a,b)=>a.p-b.p);
   if(!tips.length){const empty=!STATE.drivers.length&&!STATE.trips.filter(t=>t.date===todayStr()).length;host.innerHTML=empty?'<div class="tip"><span class="tip-i">\ud83d\udc4b</span><span class="tip-t"><b>New here?</b> Load example jobs &amp; drivers to see every screen working.</span><button class="btn btn-go btn-sm" type="button" onclick="loadDemoData()">Load sample data</button></div>':'<div class="hint" style="margin:0;">\u2713 All caught up \u2014 nothing needs your attention right now.</div>';return;}
@@ -15125,7 +15163,8 @@ async function histAutoSeed(){
   try{const c=await histCount();if(c>0){STATE.settings._histArchiveLoaded=true;save();return;}
     const el=document.getElementById('bundle_archive_gz');if(!el||!el.textContent.trim())return;
     if($('hist_stat'))$('hist_stat').textContent='Unpacking built-in archive…';
-    const csv=await gunzipB64(el.textContent.trim());if(!csv)return;
+    const csv=await gunzipB64(el.textContent.trim());
+    if(!csv){if($('hist_stat'))$('hist_stat').textContent=(typeof DecompressionStream==='undefined')?'This browser can’t unpack the built-in call archive — use Chrome, Edge, or Safari 16.4+, or import the CSV below.':'';return;}
     await histLoadArchive(csv);STATE.settings._histArchiveLoaded=true;save();
     if(typeof ACTIVE_VIEW!=='undefined'&&ACTIVE_VIEW==='history')initHistory();
     if($('hist_stat'))$('hist_stat').textContent='';
@@ -15500,14 +15539,7 @@ function hasLocality(x){
   const masked=String(x||'').replace(/\b[A-Z][A-Z0-9]*(?: [A-Z][A-Z0-9]*)?\s+(AVE|ST|RD|BLVD|PKWY|EXPWY|LN|PL|DR|TER|CT|TPKE)\b/g,'# $1');
   return NYC_LOCALITIES.test(masked);
 }
-function tidyAddr(a){
-  if(!a)return a;let s=a.toUpperCase();
-  s=s.replace(/,?\s*(U\.?S\.?A\.?|UNITED STATES)\s*$/,'');
-  s=s.replace(/\b\d{5}(-\d{4})?\b/,'');
-  [[/\bSTREET\b/g,'ST'],[/\bAVENUE\b/g,'AVE'],[/\bBOULEVARD\b/g,'BLVD'],[/\bROAD\b/g,'RD'],[/\bDRIVE\b/g,'DR'],[/\bPLACE\b/g,'PL'],[/\bLANE\b/g,'LN'],[/\bCOURT\b/g,'CT'],[/\bTERRACE\b/g,'TER'],[/\bPARKWAY\b/g,'PKWY'],[/\bTURNPIKE\b/g,'TPKE'],[/\bEXPRESSWAY\b/g,'EXPY'],[/\bHIGHWAY\b/g,'HWY'],[/\bSQUARE\b/g,'SQ'],[/\bAPARTMENT\b/g,'APT']].forEach(m=>{s=s.replace(m[0],m[1]);});
-  s=s.replace(/\s*,\s*/g,', ').replace(/\s{2,}/g,' ').replace(/,\s*$/,'').trim();
-  return s;
-}
+/* tidyAddr is defined once, in the geocoding section below (the effective version) */
 function autoFmt(el){if(!el||STATE.settings.autoaddr===false)return;const v=(el.value||'').trim();if(!v)return;const f=tidyAddr(v);if(f&&f!==el.value)el.value=f;}
 ['d_puAddr','d_doAddr','e_pu','e_do'].forEach(id=>{const el=$(id);if(el)el.addEventListener('blur',()=>autoFmt(el));});
 $('d_fare').addEventListener('input',()=>{$('d_fare').dataset.auto='';});
@@ -15532,12 +15564,12 @@ $('d_puAddr').addEventListener('input',updateReadout);
 $('d_doAddr').addEventListener('input',updateReadout);
 $('d_account').addEventListener('change',updateReadout);
 
-function clearDispatch(){editingId=null;$('editTag').style.display='none';$('d_save').textContent='Save Trip';
+function clearDispatch(){editingId=null;$('editTag').style.display='none';$('d_save').textContent='Book Trip';
   ['d_passenger','d_phone','d_puAddr','d_doAddr','d_notes','d_caller'].forEach(id=>$(id).value='');
   $('d_tolls').value='0.00';$('d_fare').value='0.00';$('d_fare').dataset.auto='';$('d_driver').value='';$('d_vehicle').value='';$('d_pax').value='1';
   if($('d_callerResult'))$('d_callerResult').innerHTML='';if($('d_returning')){$('d_returning').style.display='none';$('d_returning').innerHTML='';}
   $('d_date').value=todayStr();$('d_time').value=nowTime();
-  dispatchStops=[];lastDist=null;renderStops();$('d_meterStatus').textContent='';setWhen('sched');updateReadout();updateDispMap();}
+  dispatchStops=[];lastDist=null;renderStops();$('d_meterStatus').textContent='';setWhen('asap');updateReadout();updateDispMap();}
 $('d_clear').addEventListener('click',clearDispatch);
 
 $('d_save').addEventListener('click',()=>{
@@ -15552,11 +15584,14 @@ $('d_save').addEventListener('click',()=>{
     stops:dispatchStops.filter(s=>s.addr.trim()).map(s=>({addr:s.addr.trim()})),
     tolls:Number($('d_tolls').value)||0,fare:Math.round(Number($('d_fare').value)||0),vtype:$('d_vtype').value,pax:Number($('d_pax').value)||1,rt:($('d_rt')&&$('d_rt').checked)?1:0,tip:(typeof airportKey==='function'&&(airportKey($('d_puAddr').value)||airportKey($('d_doAddr').value)))?Math.round((Number($('d_fare').value)||0)*0.15):0,
     driverId:$('d_driver').value||'',vehicleId:$('d_vehicle').value||'',notes:$('d_notes').value.trim()};
-  if(editingId){const t=STATE.trips.find(x=>x.id===editingId);if(t){Object.assign(t,data);save();toast('Trip #'+t.dispatchNo+' updated.');}}
+  if(editingId){const t=STATE.trips.find(x=>x.id===editingId);if(t){
+      // editing: keep the tip the dispatcher already set (only recompute when the fare itself changed) and don't re-learn the fare
+      if(Number(t.fare)===data.fare)data.tip=Number(t.tip)||0;
+      Object.assign(t,data);save();toast('Trip #'+t.dispatchNo+' updated.');}}
   else{const trip={id:uid(),dispatchNo:STATE.dispatchSeq++,...data,status:'Booked',dropDate:'',dropTime:'',createdAt:new Date().toISOString()};
-    STATE.trips.unshift(trip);save();toast((whenMode==='sched'?'Reservation #':'Trip #')+trip.dispatchNo+' saved.');}
-  [data.puAddr,data.doAddr,...data.stops.map(s=>s.addr)].forEach(a=>{const c=coordsForAddr(a);rememberAddr(a,c?c.lat:null,c?c.lng:null);});
-  {const _rb=Number($('d_fare')&&$('d_fare').dataset.rbase)||0;recordFare(data.puAddr,data.doAddr,data.stops,(_rb>0&&$('d_fare').dataset.auto)?_rb:data.fare);}save();
+    STATE.trips.unshift(trip);save();toast((whenMode==='sched'?'Reservation #':'Trip #')+trip.dispatchNo+' booked.');
+    const _rb=Number($('d_fare')&&$('d_fare').dataset.rbase)||0;recordFare(data.puAddr,data.doAddr,data.stops,(_rb>0&&$('d_fare').dataset.auto)?_rb:data.fare);}
+  [data.puAddr,data.doAddr,...data.stops.map(s=>s.addr)].forEach(a=>{const c=coordsForAddr(a);rememberAddr(a,c?c.lat:null,c?c.lng:null);});save();
   clearDispatch();refreshBoard();
 });
 
@@ -15811,7 +15846,7 @@ function calculateFare(trip) {
   // --- MTA CRZ per-trip "CBD" charge (Manhattan at/below 60th St) ---
   if (touchesCRZ) {
     const amount = RATES.crzPerTripCharge[vehicleType];
-    lineItems.push({ label: 'MTA Congestion Relief Zone (CBD) Charge', amount });
+    if (amount != null && !isNaN(amount)) lineItems.push({ label: 'MTA Congestion Relief Zone (CBD) Charge', amount });   // shared rides have no CRZ rate
   }
 
   // --- Tolls ---
@@ -15881,12 +15916,16 @@ if($('nyc_toFare'))$('nyc_toFare').addEventListener('click',()=>{if(!_lastNYCtot
 
 /* ============ PAYMENTS: card fee, Square, price adjustment ============ */
 const SQFEES=[[10,1.50],[20,1.75],[25,2.00],[30,2.25],[35,2.50],[40,2.75],[45,3.00],[50,3.25],[55,3.50],[60,3.75],[65,4.00],[70,4.25],[80,4.50],[85,4.75],[90,5.00],[95,5.25],[100,5.50],[125,5.75],[150,6.00],[175,6.50],[200,7.00],[300,9.00],[400,12.00],[500,15.00]];
-function cardFeeAmt(fare){fare=Number(fare)||0;if(fare<=0)return 0;for(const b of SQFEES){if(fare<=b[0])return b[1];}return 15.00;}
+function cardFeeAmt(fare){fare=Number(fare)||0;if(fare<=0)return 0;
+  const pct=Number(STATE.settings&&STATE.settings.cardPct)||0;if(pct>0)return Math.round(fare*pct)/100;   // Settings → "Extra credit-card % fee" wins when set
+  for(const b of SQFEES){if(fare<=b[0])return b[1];}return 15.00;}
+const SQUARE_VT='https://app.squareup.com/dashboard/sales/virtual-terminal/checkout';
+function safeHttpsUrl(u,fallback){u=String(u||'').trim();return /^https:\/\/[^\s]+$/i.test(u)?u:(fallback||'');}
 function chargeSquare(amount){
   const amt=Number(amount||0).toFixed(2);
-  const url=STATE.settings.square||'https://app.squareup.com/dashboard/sales/virtual-terminal/checkout';
+  const url=safeHttpsUrl(STATE.settings.square,SQUARE_VT);
   try{if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(amt);}catch(e){}
-  window.open(url,'_blank');
+  window.open(url,'_blank','noopener');
   toast('$'+amt+' copied — in Square choose Quick charge and paste the amount.');
 }
 function chargeSquareFromReadout(){const fare=Number($('d_fare').value)||0,tolls=Number($('d_tolls').value)||0;const card=$('d_account')&&$('d_account').value==='card';chargeSquare(fare+tolls+(card?cardFeeAmt(fare):0));}
@@ -16072,7 +16111,12 @@ $('d_phone').addEventListener('blur',()=>{const n=$('d_phone').value.trim();if(p
 
 /* ============ DISPATCH BOARD (active + reservations) ============ */
 $('leadSel').addEventListener('change',()=>{STATE.settings.leadMins=+$('leadSel').value;save();refreshBoard();});
-function pickupDT(t){if(!t.date)return null;const p=t.date.split('-').map(Number);let h=0,mi=0;if(t.time){const tp=t.time.split(':');h=+tp[0]||0;mi=+tp[1]||0;}return new Date(p[0],p[1]-1,p[2],h,mi,0);}
+function pickupDT(t){if(!t.date)return null;const p=t.date.split('-').map(Number);
+  const tm=typeof mil==='function'?mil(t.time||''):(t.time||'');const m=/^(\d{1,2}):(\d{2})/.exec(tm);
+  if(!m){ // 'ASAP' / blank / unreadable time: due when it was booked (today) or at the start of that day
+    if(t.createdAt&&t.date===String(t.createdAt).slice(0,10)){const c=new Date(t.createdAt);if(!isNaN(c))return c;}
+    return new Date(p[0],p[1]-1,p[2],0,0,0);}
+  return new Date(p[0],p[1]-1,p[2],+m[1],+m[2],0);}
 function refreshBoard(){
   if(!$('activeBoard'))return;
   const now=new Date(),leadMs=(STATE.settings.leadMins||60)*60000;
@@ -16340,7 +16384,7 @@ function bestAssign(id){const t=STATE.trips.find(x=>x.id===id);if(!t)return;
 function assignVehicle(id,val){const t=STATE.trips.find(x=>x.id===id);if(!t)return;t.vehicleId=val;save();refreshBoard();}
 function editTrip(id){const t=STATE.trips.find(x=>x.id===id);if(!t)return;goTab('dispatch');editingId=id;
   $('editTag').style.display='inline';$('editTag').textContent=' — editing #'+t.dispatchNo;$('d_save').textContent='Update Trip';
-  setWhen('sched');$('d_date').value=t.date;$('d_time').value=t.time;
+  setWhen('sched');$('d_date').value=t.date;{const tm=mil(t.time||'');$('d_time').value=/^\d{2}:\d{2}$/.test(tm)?tm:(/^\d:\d{2}$/.test(tm)?'0'+tm:'');}  // 'ASAP' or odd times would blank a <input type=time>; keep what we can
   fillSelect($('d_account'),accountOptions(false));$('d_account').value=t.accountId||(t.payType==='Cash'?'cash':t.payType==='Credit Card'?'card':'');
   $('d_passenger').value=t.passenger||'';$('d_phone').value=t.phone||'';
   $('d_puAddr').value=t.puAddr||'';$('d_doAddr').value=t.doAddr||'';
@@ -16351,7 +16395,7 @@ function editTrip(id){const t=STATE.trips.find(x=>x.id===id);if(!t)return;goTab(
   lastDist=null;updateReadout();updateDispMap();window.scrollTo({top:0,behavior:'smooth'});
 }
 function renderTodayStats(){
-  const t=todayStr(),today=STATE.trips.filter(x=>x.date===t&&x.status!=='Canceled');
+  const t=todayStr(),today=STATE.trips.filter(x=>x.date===t&&x.status!=='Canceled'&&x.status!=='No-Show'&&x.status!=='Disregard');
   const rev=today.reduce((s,x)=>s+(Number(x.fare)||0)+(Number(x.tolls)||0),0);
   const pend=today.filter(x=>x.status==='Booked'||x.status==='Dispatched').length;
   const resvCount=STATE.trips.filter(x=>x.status==='Booked').length;
@@ -16628,7 +16672,8 @@ function rememberAddr(address,lat,lng){
   const ex=STATE.addrbook.find(x=>x.address.toLowerCase()===key);
   if(ex){if(lat!=null)ex.lat=lat;if(lng!=null)ex.lng=lng;return;}
   STATE.addrbook.unshift({address,lat:lat==null?null:lat,lng:lng==null?null:lng});
-  if(STATE.addrbook.length>800)STATE.addrbook.length=800;
+  // generous cap (the built-in book alone is ~13k rows); when trimming, drop un-pinned entries first
+  if(STATE.addrbook.length>25000){const keep=STATE.addrbook.filter(x=>x.lat!=null&&x.lng!=null);STATE.addrbook=(keep.length>20000?keep:STATE.addrbook).slice(0,20000);}
 }
 
 let _acOpen=null;
@@ -16760,8 +16805,8 @@ function tripAccountLabel(t){if(t.accountId){const a=STATE.accounts.find(a=>a.id
 function filteredTrips(){const from=$('t_from').value,to=$('t_to').value,acct=$('t_account').value,st=$('t_status').value,drv=$('t_driver')?$('t_driver').value:'';
   return STATE.trips.filter(t=>{if(from&&t.date<from)return false;if(to&&t.date>to)return false;if(acct&&t.accountId!==acct)return false;if(drv&&t.driverId!==drv)return false;if(st&&t.status!==st)return false;return true;});}
 function tripMapLink(id){const t=STATE.trips.find(x=>x.id===id);if(!t)return;const b=((STATE.settings.addr||'')+', '+(STATE.settings.city||''));
-  window.open('https://www.google.com/maps/dir/?api=1&origin='+encodeURIComponent(b)+'&waypoints='+encodeURIComponent(t.puAddr||'')+'&destination='+encodeURIComponent(t.doAddr||''),'_blank');}
-function exportTripsCSV(){const rows=filteredTrips();const esc2=v=>{v=(v==null?'':String(v));return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  window.open('https://www.google.com/maps/dir/?api=1&origin='+encodeURIComponent(b)+'&waypoints='+encodeURIComponent(t.puAddr||'')+'&destination='+encodeURIComponent(t.doAddr||''),'_blank','noopener');}
+function exportTripsCSV(){const rows=filteredTrips();const esc2=csv;
   const head=['Call #','Date','Time','Pickup','Dropoff','Phone','Passenger','Driver','Vehicle','Pay','Account','Fare','Tolls','Tip','Card fee','Status','Notes'];
   const lines=[head.join(',')];
   rows.forEach(t=>{const d=STATE.drivers.find(x=>x.id===t.driverId);const v=STATE.vehicles.find(x=>x.id===t.vehicleId);const card=t.payType==='Credit Card';
@@ -16989,7 +17034,7 @@ async function fetchAlts(a,b){
 async function routeFor(points){
   const _k=points.map(p=>(+p.lat).toFixed(4)+','+(+p.lng).toFixed(4)).join('|');
   window._rc=window._rc||{};if(window._rc[_k])return window._rc[_k];
-  const _r=await _routeForRaw(points);if(_r)window._rc[_k]=_r;return _r;
+  const _r=await _routeForRaw(points);if(_r&&_r.geo)window._rc[_k]=_r;return _r;   // only remember real road routes, never the straight-line guess
 }
 async function _routeForRaw(points){
   const t=ms=>new Promise(r=>setTimeout(()=>r(null),ms));
@@ -17017,9 +17062,12 @@ function estFare(rate,miles,minutes,ap){
 let mapAll=null,mapLayers=null;
 function ensureLeaflet(elId){
   const el=$(elId);
-  if(!isOnline()){if(el)el.outerHTML='<div class="map-offline">You\'re offline, so the street map can\'t load its tiles. The Dispatch tab\'s Trip Preview still shows an offline route diagram, and address search still works from your Address Book.</div>';return null;}
-  if(!window.L){if(el)el.outerHTML='<div class="map-offline">The map needs an internet connection to load. Reconnect and reopen this tab.</div>';return null;}
-  return true;
+  // never destroy the map container — show the notice beside it so the map can come back once we're online again
+  const note=(msg)=>{if(!el)return;let n=el.parentNode&&el.parentNode.querySelector('.map-offline[data-for="'+elId+'"]');if(!n){n=document.createElement('div');n.className='map-offline';n.dataset.for=elId;el.parentNode.insertBefore(n,el);}n.textContent=msg;el.style.display='none';};
+  const clear=()=>{if(!el)return;const n=el.parentNode&&el.parentNode.querySelector('.map-offline[data-for="'+elId+'"]');if(n)n.remove();el.style.display='';};
+  if(!isOnline()){note('You\'re offline, so the street map can\'t load its tiles. The Dispatch tab\'s Trip Preview still shows an offline route diagram, and address search still works from your Address Book.');return null;}
+  if(!window.L){note('The map needs an internet connection to load. Reconnect and reopen this tab.');return null;}
+  clear();return true;
 }
 function initMap(){
   if(!$('m_from').value){const d=new Date();d.setDate(1);$('m_from').value=d.toISOString().slice(0,10);}
@@ -17214,8 +17262,8 @@ function estExtras(pu,doo,fare){
   h+='<div class="hint" style="margin:4px 0 0;">Card fee is your Square bracket; tolls & congestion are estimates. Bronx & Staten Island book fares already include the toll.</div></div>';
   return h;
 }
-if($('e_tff'))$('e_tff').addEventListener('click',()=>{const pu=$('e_pu').value.trim(),doo=$('e_do').value.trim();if(!pu||!doo){toast('Enter pick-up and drop-off first.',true);return;}window.open('https://www.taxifarefinder.com/main.php?city=New-York&from='+encodeURIComponent(pu)+'&to='+encodeURIComponent(doo),'_blank');});
-if($('e_rg'))$('e_rg').addEventListener('click',()=>{const pu=$('e_pu').value.trim(),doo=$('e_do').value.trim();if(!pu||!doo){toast('Enter pick-up and drop-off first.',true);return;}window.open('https://ride.guru/estimate?from='+encodeURIComponent(pu)+'&to='+encodeURIComponent(doo),'_blank');});
+if($('e_tff'))$('e_tff').addEventListener('click',()=>{const pu=$('e_pu').value.trim(),doo=$('e_do').value.trim();if(!pu||!doo){toast('Enter pick-up and drop-off first.',true);return;}window.open('https://www.taxifarefinder.com/main.php?city=New-York&from='+encodeURIComponent(pu)+'&to='+encodeURIComponent(doo),'_blank','noopener');});
+if($('e_rg'))$('e_rg').addEventListener('click',()=>{const pu=$('e_pu').value.trim(),doo=$('e_do').value.trim();if(!pu||!doo){toast('Enter pick-up and drop-off first.',true);return;}window.open('https://ride.guru/estimate?from='+encodeURIComponent(pu)+'&to='+encodeURIComponent(doo),'_blank','noopener');});
 $('e_run').addEventListener('click',async()=>{
   const pu=$('e_pu').value.trim(),doo=$('e_do').value.trim();
   if(!pu||!doo){toast('Enter pick-up and drop-off.',true);return;}
@@ -17333,25 +17381,37 @@ $('iv_build').addEventListener('click',()=>{
   const acct=STATE.accounts.find(a=>a.id===$('iv_account').value);
   if(!acct){toast('Pick an account first.',true);return;}
   const from=$('iv_from').value,to=$('iv_to').value;
-  const trips=STATE.trips.filter(t=>t.accountId===acct.id&&t.status!=='Canceled'&&(!from||t.date>=from)&&(!to||t.date<=to)).sort((a,b)=>a.date===b.date?(a.time<b.time?-1:1):(a.date<b.date?-1:1));
-  if(!trips.length){$('iv_preview').innerHTML='<div class="empty">No billable trips for <b>'+esc(acct.name)+'</b> in this range.</div>';return;}
-  const html=buildInvoiceHTML(acct,trips,$('iv_due').value,STATE.invoiceSeq);
-  $('iv_preview').innerHTML='<div class="btn-row"><button class="btn btn-go" id="iv_open">Open / Print Invoice</button><button class="btn btn-navy" id="iv_square">&#128179; Charge total on Square</button></div><div class="panel" style="margin-top:12px;"><div class="panel-body" style="background:#fff;">'+html+'</div></div>';
-  $('iv_open').addEventListener('click',()=>{STATE.invoiceSeq++;save();openPrint(html);});
+  // bill only finished rides (never Booked / No-Show / Disregard / Canceled) and never the same ride twice
+  const inRange=STATE.trips.filter(t=>t.accountId===acct.id&&t.status==='Completed'&&(!from||t.date>=from)&&(!to||t.date<=to));
+  const already=inRange.filter(t=>t.invoiceNo);
+  const trips=inRange.filter(t=>!t.invoiceNo).sort((a,b)=>a.date===b.date?(a.time<b.time?-1:1):(a.date<b.date?-1:1));
+  const note=already.length?'<div class="hint" style="margin:0 0 8px;">'+already.length+' completed trip'+(already.length>1?'s':'')+' in this range '+(already.length>1?'are':'is')+' already on invoice #'+esc([...new Set(already.map(t=>t.invoiceNo))].join(', #'))+' and left out.</div>':'';
+  if(!trips.length){$('iv_preview').innerHTML=note+'<div class="empty">No completed, un-invoiced trips for <b>'+esc(acct.name)+'</b> in this range.</div>';return;}
+  const invNo=STATE.invoiceSeq;
+  const html=buildInvoiceHTML(acct,trips,$('iv_due').value,invNo);
+  $('iv_preview').innerHTML=note+'<div class="btn-row"><button class="btn btn-go" id="iv_open">Open / Print Invoice #'+invNo+'</button><button class="btn btn-navy" id="iv_square">&#128179; Charge total on Square</button></div><div class="panel" style="margin-top:12px;"><div class="panel-body" style="background:#fff;">'+html+'</div></div>';
+  $('iv_open').addEventListener('click',()=>{
+    if(!STATE.invoices)STATE.invoices=[];
+    if(!STATE.invoices.some(i=>i.no===invNo)){
+      STATE.invoices.push({no:invNo,accountId:acct.id,account:acct.name,date:todayStr(),due:$('iv_due').value,from,to,tripIds:trips.map(t=>t.id),total:Number(window._lastInvTotal)||0,status:'sent',createdAt:new Date().toISOString()});
+      trips.forEach(t=>{t.invoiceNo=invNo;});STATE.invoiceSeq=invNo+1;save();
+      $('iv_open').textContent='Print again — invoice #'+invNo+' recorded';
+    }
+    openPrint(html);});
   if($('iv_square'))$('iv_square').addEventListener('click',()=>chargeSquare(window._lastInvTotal||0));
 });
 const SKYWAY_LOGO_SVG='<svg class="inv-logo" width="66" height="66" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="48" fill="#111"/><path d="M30 32 Q72 26 60 50 Q48 74 80 68" fill="none" stroke="#c9a227" stroke-width="15" stroke-linecap="round"/><path d="M30 32 Q72 26 60 50 Q48 74 80 68" fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="3 6"/></svg>';
 function buildInvoiceHTML(acct,trips,due,invNo){
-  const s=STATE.settings;let sub=0,tolls=0,rows='';
-  trips.forEach(t=>{sub+=Number(t.fare)||0;tolls+=Number(t.tolls)||0;
-    rows+=`<tr><td>${fmtDate(t.date)}</td><td>${esc(t.puAddr)}</td><td>${esc(t.doAddr)}</td><td class="r">${money(t.tolls)}</td><td class="r">${money(t.fare)}</td></tr>`;});
-  const subtotal=sub+tolls,ccu=Number(acct.ccu!=null?acct.ccu:s.ccu)||0,total=subtotal+ccu;window._lastInvTotal=total;
+  const s=STATE.settings;let sub=0,tolls=0,tips=0,rows='';
+  trips.forEach(t=>{sub+=Number(t.fare)||0;tolls+=Number(t.tolls)||0;tips+=Number(t.tip)||0;
+    rows+=`<tr><td>${fmtDate(t.date)}</td><td>${esc(t.puAddr)}</td><td>${esc(t.doAddr)}</td><td class="r">${money(t.tolls)}</td><td class="r">${money((Number(t.fare)||0)+(Number(t.tip)||0))}${Number(t.tip)>0?'<div class="hint" style="margin:0;">incl. '+money(t.tip)+' tip</div>':''}</td></tr>`;});
+  const subtotal=sub+tolls+tips,ccu=Number(acct.ccu!=null?acct.ccu:s.ccu)||0,total=subtotal+ccu;window._lastInvTotal=total;
   const addrLines=(acct.addr||'').split(/\n|,(?=\s*[A-Za-z]{2},?\s*\d)/).map(x=>x.trim()).filter(Boolean);
   const feeLabel=acct.feeLabel||'CCU';
   return `<div class="inv-top"><div class="inv-co">${SKYWAY_LOGO_SVG}<h2>${esc(s.name)}</h2>
     <div class="line">${esc(s.addr)}</div><div class="line">${esc(s.city)}</div><div class="line">Tel. ${esc(s.phone)}</div><div class="line">Base #: ${esc(s.base)}</div></div>
     <div class="inv-meta"><div class="lab">Invoice for</div><div>${esc(acct.name)}</div>${addrLines.map(l=>`<div>${esc(l)}</div>`).join('')}${acct.attn?`<div>Attn.: ${esc(acct.attn)}</div>`:''}
-    <div class="lab">Account #</div><div>${esc(acct.number)}</div><div class="lab">Due date</div><div>${fmtDate(due)}</div></div></div>
+    <div class="lab">Account #</div><div>${esc(acct.number)}</div><div class="lab">Invoice #</div><div>${esc(invNo)}</div><div class="lab">Invoice date</div><div>${fmtDate(todayStr())}</div><div class="lab">Due date</div><div>${fmtDate(due)}</div></div></div>
     <table class="inv"><thead><tr><th>Date</th><th>Pick-Up Address</th><th>Drop-Off Address</th><th class="r">Tolls</th><th class="r">Fare</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="inv-totals"><table><tr><td class="lab">Subtotal:</td><td class="r">${money(subtotal)}</td></tr>
     <tr><td class="lab">${esc(feeLabel)}:</td><td class="r">${money(ccu)}</td></tr><tr><td class="lab due">Total Due:</td><td class="r due">${money(total)}</td></tr></table></div>
@@ -17440,7 +17500,7 @@ $('ern_csv').addEventListener('click',()=>{
   const period=$('ern_period').value,{from,to}=periodRange(period,$('ern_date').value||todayStr());
   const r=driverSettlement(from,to);
   let csv='Driver,TLC,Trips,Gross Fares,Tolls,Card Portion,Card Fees,Base Fee Owed,Take-Home\r\n';
-  r.rows.forEach(x=>{csv+=[ '"'+x.d.name.replace(/"/g,'""')+'"',x.d.tlc||'',x.n,x.fares.toFixed(2),x.tolls.toFixed(2),x.cardAmt.toFixed(2),x.cardFees.toFixed(2),x.baseOwed.toFixed(2),x.take.toFixed(2)].join(',')+'\r\n';});
+  r.rows.forEach(x=>{csv+=[ window.csv(x.d.name),window.csv(x.d.tlc||''),x.n,x.fares.toFixed(2),x.tolls.toFixed(2),x.cardAmt.toFixed(2),x.cardFees.toFixed(2),x.baseOwed.toFixed(2),x.take.toFixed(2)].join(',')+'\r\n';});
   download('skyway-settlement-'+from+'_'+to+'.csv',csv,'text/csv');
   toast('Settlement CSV downloaded.');
 });
@@ -17456,7 +17516,8 @@ $('ern_fin').addEventListener('click',()=>{
   download('skyway-financial-'+from.slice(0,7)+'.csv',csv,'text/csv');
   toast('Financial-statement export downloaded for '+mName+'.');
 });
-function renderDrivers(){$('driverBody').innerHTML=STATE.drivers.map(d=>`<tr><td>${esc(d.name)}</td><td class="mono">${esc(d.tlc||'—')}</td><td>${esc(d.phone||'')}</td><td style="white-space:nowrap;"><button class="btn btn-ghost btn-sm" onclick="editDriver('${d.id}')">Edit</button> <button class="btn btn-void btn-sm" onclick="delDriver('${d.id}')">Del</button></td></tr>`).join('')||'<tr><td colspan="4"><div class="empty">No drivers yet.</div></td></tr>';}
+function telLink(p){const d=String(p||'').replace(/[^\d+]/g,'');if(!d)return '';const n=d.startsWith('+')?d:(d.length===10?'+1'+d:'+'+d);return '<a href="tel:'+esc(n)+'">'+esc(p)+'</a> <a href="sms:'+esc(n)+'" title="Text" style="text-decoration:none;">&#128172;</a>';}
+function renderDrivers(){$('driverBody').innerHTML=STATE.drivers.map(d=>`<tr><td>${esc(d.name)}</td><td class="mono">${esc(d.tlc||'—')}</td><td>${telLink(d.phone)}</td><td style="white-space:nowrap;"><button class="btn btn-ghost btn-sm" onclick="editDriver('${d.id}')">Edit</button> <button class="btn btn-void btn-sm" onclick="delDriver('${d.id}')">Del</button></td></tr>`).join('')||'<tr><td colspan="4"><div class="empty">No drivers yet.</div></td></tr>';}
 function clearDriver(){['dr_id','dr_name','dr_tlc','dr_phone','dr_vtypes','dr_maxpax','dr_tags','dr_notes','dr_carno'].forEach(id=>$(id).value='');['dr_feeweek','dr_feetrip','dr_feepct'].forEach(id=>$(id).value='0');if($('dr_active'))$('dr_active').checked=true;}
 $('dr_clear').addEventListener('click',clearDriver);
 function editDriver(id){const d=STATE.drivers.find(x=>x.id===id);if(!d)return;$('dr_id').value=d.id;$('dr_name').value=d.name;$('dr_tlc').value=d.tlc||'';$('dr_phone').value=d.phone||'';$('dr_feeweek').value=Number(d.feeWeek||0);$('dr_feetrip').value=Number(d.feeTrip||0);$('dr_feepct').value=Number(d.feePct||0);$('dr_vtypes').value=d.vtypes||'';$('dr_maxpax').value=d.maxPax||'';$('dr_tags').value=d.tags||'';$('dr_notes').value=d.notes||'';if($('dr_carno'))$('dr_carno').value=d.carNo||'';if($('dr_active'))$('dr_active').checked=d.active!==false;}
@@ -17510,11 +17571,13 @@ $('tlc_export').addEventListener('click',()=>{
     +(missing?` <b style="color:#a4161a;">${missing} trip(s) missing a driver TLC # or vehicle plate</b> — fill those in Fleet so submissions aren't rejected.`:'')
     +` Verify the column order against the current TLC CSV spec before uploading.</div>`;
 });
-function csv(v){v=String(v==null?'':v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
+function csv(v){v=String(v==null?'':v);
+  if(/^[=+\-@\t\r]/.test(v)&&!/^-?\d+(\.\d+)?$/.test(v))v="'"+v;   // stop spreadsheet formula injection from notes/addresses
+  return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
 
 /* ============ SETTINGS / BACKUP ============ */
 function renderSettings(){const s=STATE.settings;$('s_name').value=s.name;$('s_addr').value=s.addr;$('s_city').value=s.city;$('s_phone').value=s.phone;$('s_base').value=s.base;$('s_ccu').value=Number(s.ccu||0).toFixed(2);$('s_contact').value=s.contact||'';$('s_title').value=s.title||'';$('s_cphone').value=s.cphone||'';$('s_org').value=s.org||'';$('s_geokey').value=s.geokey||'';$('s_gmapkey').value=s.gmapkey||'';$('s_theme').value=s.theme||'gold';$('s_autoaddr').checked=s.autoaddr!==false;$('s_cardpct').value=Number(s.cardPct||0);$('s_priceadj').value=Number(s.priceAdjust||0);$('s_square').value=s.square||'';if($('s_feed'))$('s_feed').value=s.feed||'';if($('callerCount'))$('callerCount').textContent=callerCountText();if($('routeCount'))$('routeCount').textContent=routeCountText();if($('histCount'))$('histCount').textContent=(HISTSEED&&HISTSEED.drivers)?(Object.keys(HISTSEED.drivers).length+' car numbers'+(HISTSEED.generated?' ('+HISTSEED.generated+')':'')):'none loaded';}
-$('s_save').addEventListener('click',()=>{Object.assign(STATE.settings,{name:$('s_name').value.trim(),addr:$('s_addr').value.trim(),city:$('s_city').value.trim(),phone:$('s_phone').value.trim(),base:$('s_base').value.trim(),ccu:Number($('s_ccu').value)||0,contact:$('s_contact').value.trim(),title:$('s_title').value.trim(),cphone:$('s_cphone').value.trim(),org:$('s_org').value.trim(),geokey:$('s_geokey').value.trim(),gmapkey:$('s_gmapkey').value.trim(),theme:$('s_theme').value,autoaddr:$('s_autoaddr').checked,cardPct:Number($('s_cardpct').value)||0,priceAdjust:Number($('s_priceadj').value)||0,square:$('s_square').value.trim(),feed:($('s_feed')?$('s_feed').value.trim():(STATE.settings.feed||''))});save();applyBrand();toast('Settings saved.');});
+$('s_save').addEventListener('click',()=>{Object.assign(STATE.settings,{name:$('s_name').value.trim(),addr:$('s_addr').value.trim(),city:$('s_city').value.trim(),phone:$('s_phone').value.trim(),base:$('s_base').value.trim(),ccu:Number($('s_ccu').value)||0,contact:$('s_contact').value.trim(),title:$('s_title').value.trim(),cphone:$('s_cphone').value.trim(),org:$('s_org').value.trim(),geokey:$('s_geokey').value.trim(),gmapkey:$('s_gmapkey').value.trim(),theme:$('s_theme').value,autoaddr:$('s_autoaddr').checked,cardPct:Number($('s_cardpct').value)||0,priceAdjust:Number($('s_priceadj').value)||0,square:safeHttpsUrl($('s_square').value,SQUARE_VT),feed:($('s_feed')?$('s_feed').value.trim():(STATE.settings.feed||''))});save();applyBrand();toast('Settings saved.');});
 function applyBrand(){if($('brandName'))$('brandName').textContent=STATE.settings.name||'SKYWAY CAR SERVICE';if($('brandBase'))$('brandBase').textContent=STATE.settings.base||'';const th=STATE.settings.theme||'gold';document.body.classList.remove('classic','gold','light');if(th==='classic')document.body.classList.add('classic');else if(th==='gold')document.body.classList.add('gold');else document.body.classList.add('light');}
 if($('s_theme'))$('s_theme').addEventListener('change',()=>{STATE.settings.theme=$('s_theme').value;save();applyBrand();toast('Theme applied.');});
 async function testGoogleNow(){const out=$('s_gtestOut');if(!out)return;
@@ -17671,7 +17734,7 @@ function impImport(){
     } else if(t==='trips'){
       const pu=g('puAddr');if(!pu){skipped++;return;}const date=impDate(g('date'));
       const acctTxt=g('account');let accountId=null,payType='Cash';
-      if(acctTxt){const a=STATE.accounts.find(a=>a.number===acctTxt||(a.name||'').toLowerCase()===acctTxt.toLowerCase());if(a){accountId=a.id;payType='Account';}else payType='Account';}
+      if(acctTxt){const a=STATE.accounts.find(a=>a.number===acctTxt||(a.name||'').toLowerCase()===acctTxt.toLowerCase());if(a){accountId=a.id;payType='Account';}else payType='Cash';}   // unknown account name: keep it in notes, bill as cash so it can't vanish into "account" totals
       const drvTxt=g('driver');const drv=drvTxt?STATE.drivers.find(d=>(d.name||'').toLowerCase()===drvTxt.toLowerCase()):null;
       const vehTxt=g('vehicle');const veh=vehTxt?STATE.vehicles.find(v=>(v.plate&&v.plate.toLowerCase()===vehTxt.toLowerCase())||(v.name&&v.name.toLowerCase()===vehTxt.toLowerCase())):null;
       let notes=g('notes');if(acctTxt&&!accountId)notes='Acct: '+acctTxt+(notes?' · '+notes:'');
@@ -17731,7 +17794,10 @@ function importTLCcsv(text){
 }
 function parseCSVline(line){const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(q){if(ch==='"'){if(line[i+1]==='"'){cur+='"';i++;}else q=false;}else cur+=ch;}else{if(ch===','){out.push(cur);cur='';}else if(ch==='"')q=true;else cur+=ch;}}out.push(cur);return out;}
 function toISO(d){if(!d)return '';const p=d.split('/');if(p.length===3){return p[2]+'-'+String(p[0]).padStart(2,'0')+'-'+String(p[1]).padStart(2,'0');}return d;}
-$('b_reset').addEventListener('click',()=>{if(!confirm('Erase ALL data on this computer? Export a backup first if unsure.'))return;if(!confirm('Last chance — this cannot be undone. Continue?'))return;STATE=defaultState();save();applyBrand();goTab('dispatch');toast('All data reset.',true);});
+$('b_reset').addEventListener('click',()=>{if(!confirm('Erase ALL data on this computer? Export a backup first if unsure.'))return;if(!confirm('Last chance — this cannot be undone. Continue?'))return;
+  STATE=migrate(defaultState());
+  ['skyway_help_seen','skyway_sync_queue','skyway_sync_cursor'].forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});
+  saveNow();applyBrand();goTab('dispatch');toast('All data reset.',true);});
 
 /* ============ PRINT ============ */
 function printReceiptById(id){const t=STATE.trips.find(x=>x.id===id);if(!t)return;const s=STATE.settings;
@@ -17794,7 +17860,7 @@ if(!STATE.settings._drvSeed1){try{
       if(!STATE.settings.histMap[code])STATE.settings.histMap[code]=d.id;});
     STATE.trips.forEach(t=>{if(t._hist&&!t.driverId&&t.notes){const m=/Car (\d{4})/.exec(t.notes);if(m&&STATE.settings.histMap[m[1]])t.driverId=STATE.settings.histMap[m[1]];}});
     if(made)toast(made+' drivers added to Fleet from your 2026 call history.');
-  }}catch(e){}STATE.settings._drvSeed1=true;save();}tick();setInterval(tick,1000);applyBrand();setWhen('sched');renderDispatch();if(typeof renderCID==='function')renderCID();if(typeof renderSmartTips==='function')renderSmartTips();
+  }}catch(e){}STATE.settings._drvSeed1=true;save();}tick();setInterval(tick,1000);applyBrand();setWhen('asap');renderDispatch();if(typeof renderCID==='function')renderCID();if(typeof renderSmartTips==='function')renderSmartTips();
 if($('gsearch')){$('gsearch').addEventListener('input',globalSearch);$('gsearch').addEventListener('focus',globalSearch);$('gsearch').addEventListener('blur',()=>setTimeout(()=>{const b=$('gsr');if(b)b.hidden=true;},180));$('gsearch').addEventListener('keydown',e=>{if(e.key==='Escape')gsClear();});}
 if($('opt_run'))$('opt_run').addEventListener('click',renderOptimizer);
 if($('opt_apply'))$('opt_apply').addEventListener('click',optApplyAll);
