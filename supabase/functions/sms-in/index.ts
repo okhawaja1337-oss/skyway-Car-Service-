@@ -8,11 +8,9 @@
 // Driver keywords:   JOIN · Y / N (open offer) · E A P D (stage codes) · W <min> · OK
 // Passenger:         C / CANCEL · WHERE / ETA · 5 · YES / NO (flight move) · STOP / START / HELP
 // Anything else lands in the Messages panel (messages row, status 'unread').
-import { admin, audit, insertMessage, Json, raiseNeedsYou, setTripStage, text, toE164 } from "../_shared/db.ts";
+import { admin, audit, insertMessage, issueConnectToken, Json, raiseNeedsYou, readForm, setTripStage, text, toE164 } from "../_shared/db.ts";
 import { twiml, validateSignature, webhookUrl } from "../_shared/twilio.ts";
-import { readForm } from "../_shared/db.ts";
 import { loadTemplates, render } from "../_shared/templates.ts";
-import { issueConnectToken } from "../connect-invite/index.ts";
 
 const STAGE_CODES: Record<string, string> = { E: "enroute", A: "onloc", P: "pob", D: "done" };
 const STAGE_WORDS: Record<string, string> = { enroute: "on the way", onloc: "arrived", pob: "passenger on board", done: "completed" };

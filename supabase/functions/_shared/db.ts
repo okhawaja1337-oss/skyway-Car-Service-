@@ -13,6 +13,9 @@ export interface LocationRow {
   name: string | null;
   tz: string | null;
   currency: string | null;
+  locale: string | null;
+  units: string | null;
+  country: string | null;
   phone_cc: string | null;
   square_location_id: string | null;
   twilio_messaging_sid: string | null;
@@ -156,6 +159,18 @@ export function shortToken(len = 6): string {
   let out = "";
   for (const b of bytes) out += alphabet[b % alphabet.length];
   return out;
+}
+
+/** Connect-phone token (§4): 24 h, single use. Shared by connect-invite and the JOIN keyword in sms-in. */
+export async function issueConnectToken(locationId: string, driverId: string): Promise<{ token: string; url: string; expires_at: string }> {
+  const token = shortToken(5);
+  const expires_at = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+  const { error } = await admin().from("connect_tokens").insert({ location_id: locationId, token, driver_id: driverId, expires_at, used: false });
+  if (error) throw new HttpError(500, error.message);
+  const base = publicBaseUrl();
+  // go.<domain>/d/<token> rewrites to driver.html?t=<token> (Cloudflare Pages _redirects, see docs/SETUP.md)
+  const url = base ? `${base}/d/${token}` : `driver.html?t=${token}`;
+  return { token, url, expires_at };
 }
 
 export async function getLocation(id: string): Promise<LocationRow> {

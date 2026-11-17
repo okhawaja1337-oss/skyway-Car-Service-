@@ -142,18 +142,29 @@
   function snapReset() { SNAP = {}; lsDel(SNAP_KEY); }
 
   /* ---------- queue ---------- */
-  var QUEUE = null;
-  function queueLoad() { if (!QUEUE) { QUEUE = lsGet(QUEUE_KEY, null); if (!Array.isArray(QUEUE)) QUEUE = []; } return QUEUE; }
-  function queueSave() { lsSet(QUEUE_KEY, queueLoad()); }
+  /* The queue holds only {table,id,rev,del}; bodies are read from STATE at flush time so
+     localStorage stays small.  QIDX makes enqueue O(1) (the first upload queues every row). */
+  var QUEUE = null, QIDX = null, _qDirty = false;
+  function qkey(table, id) { return table + '\u0001' + id; }
+  function queueLoad() {
+    if (!QUEUE) {
+      QUEUE = lsGet(QUEUE_KEY, null); if (!Array.isArray(QUEUE)) QUEUE = [];
+      QIDX = {}; for (var i = 0; i < QUEUE.length; i++) QIDX[qkey(QUEUE[i].table, QUEUE[i].id)] = QUEUE[i];
+    }
+    return QUEUE;
+  }
+  function queueSave() { _qDirty = false; lsSet(QUEUE_KEY, queueLoad()); }
+  function queueClear() { QUEUE = []; QIDX = {}; queueSave(); }
   function enqueue(table, id, del) {
-    var q = queueLoad();
-    for (var i = 0; i < q.length; i++) { if (q[i].table === table && q[i].id === id) { q[i].rev = nowMs(); q[i].del = !!del; queueSave(); return; } }
-    q.push({ table: table, id: id, rev: nowMs(), del: !!del });
-    queueSave();
+    var q = queueLoad(), k = qkey(table, id), e = QIDX[k];
+    if (e) { e.rev = nowMs(); e.del = !!del; }
+    else { e = { table: table, id: id, rev: nowMs(), del: !!del }; q.push(e); QIDX[k] = e; }
+    _qDirty = true;
   }
   function queueRemove(items) {
-    var q = queueLoad(), keep = [];
-    for (var i = 0; i < q.length; i++) { var drop = false; for (var j = 0; j < items.length; j++) { if (items[j] === q[i]) { drop = true; break; } } if (!drop) keep.push(q[i]); }
+    var q = queueLoad(), keep = [], drop = {};
+    for (var j = 0; j < items.length; j++) drop[qkey(items[j].table, items[j].id)] = items[j];
+    for (var i = 0; i < q.length; i++) { var k = qkey(q[i].table, q[i].id); if (drop[k] === q[i]) delete QIDX[k]; else keep.push(q[i]); }
     QUEUE = keep; queueSave();
   }
 
@@ -206,6 +217,7 @@
       var cid = configRowId(key), ch = hashOf(configBody(key));
       if (snapGet('config', cid) !== ch) { enqueue('config', cid, false); snapSet('config', cid, ch); n++; }
     });
+    if (_qDirty) queueSave();
     if (n) { log('queued', n); STATUS.pending = queueLoad().length; renderStatus(); scheduleFlush(0); }
     return n;
   }
@@ -615,9 +627,10 @@
     if (patch.anonKey !== undefined) c.anonKey = String(patch.anonKey || '').trim();
     if (patch.locationId !== undefined) c.locationId = String(patch.locationId || '').trim();
     if (patch.enabled !== undefined) c.enabled = patch.enabled === true;
-    if (locId() !== locBefore) { snapReset(); cursorReset(); QUEUE = []; queueSave(); }
+    if (locId() !== locBefore) { snapReset(); cursorReset(); queueClear(); }
     try { if (typeof window.save === 'function') window.save(); } catch (e) {}
     if (enabled() !== before || (enabled() && locId() !== locBefore)) start(); else renderStatus();
+    if (c.enabled !== !!(byId('cl_enabled') && byId('cl_enabled').checked)) { try { render(); } catch (e) {} }   /* keep the card in step when set() is called from code */
     return get();
   }
 

@@ -58,16 +58,24 @@ language sql stable as $$ select skyway_role() = 'driver' and loc = any(skyway_l
 -- keeps the writer's own clock value so last-writer-wins compares like with like.
 create or replace function skyway_touch() returns trigger
 language plpgsql as $$
-declare incoming bigint;
+declare incoming bigint; marker text;
 begin
   if tg_op = 'INSERT' then
     incoming := coalesce(new.rev, skyway_now_ms());
     new.client_rev := incoming;
     new.created_at := coalesce(new.created_at, now());
+    -- INSERT … ON CONFLICT DO UPDATE (what PostgREST's merge-duplicates runs) fires this
+    -- BEFORE INSERT first and then BEFORE UPDATE with the already-bumped rev, so hand the
+    -- writer's original rev to the UPDATE half through a transaction-local setting.
+    perform set_config('skyway.incoming', new.id || ':' || incoming::text, true);
   else
-    -- upsert path: BEFORE INSERT already stored the writer's rev in client_rev;
-    -- plain PATCH path: the writer's rev is still in new.rev
-    incoming := case when new.client_rev is distinct from old.client_rev then new.client_rev else coalesce(new.rev, skyway_now_ms()) end;
+    marker := current_setting('skyway.incoming', true);
+    if marker is not null and split_part(marker, ':', 1) = new.id then
+      incoming := split_part(marker, ':', 2)::bigint;          -- upsert path
+      perform set_config('skyway.incoming', '', true);
+    else
+      incoming := coalesce(new.rev, skyway_now_ms());           -- plain UPDATE / PATCH path
+    end if;
     if old.client_rev is not null and incoming < old.client_rev then
       return null;                                   -- older write loses, silently
     end if;
@@ -618,8 +626,12 @@ language sql immutable as $$ select kind || '_seq_' || regexp_replace(lower(loc)
 create or replace function ensure_location_sequences(loc text, dispatch_start bigint default 1001, invoice_start bigint default 1001)
 returns void language plpgsql security definer as $$
 begin
-  execute format('create sequence if not exists %I start with %s', skyway_seq_name('dispatch', loc), greatest(dispatch_start, 1));
-  execute format('create sequence if not exists %I start with %s', skyway_seq_name('invoice', loc), greatest(invoice_start, 1));
+  if not exists (select 1 from pg_class where relkind = 'S' and relname = skyway_seq_name('dispatch', loc)) then
+    execute format('create sequence %I start with %s', skyway_seq_name('dispatch', loc), greatest(dispatch_start, 1));
+  end if;
+  if not exists (select 1 from pg_class where relkind = 'S' and relname = skyway_seq_name('invoice', loc)) then
+    execute format('create sequence %I start with %s', skyway_seq_name('invoice', loc), greatest(invoice_start, 1));
+  end if;
 end $$;
 
 create or replace function next_dispatch_no(loc text) returns bigint

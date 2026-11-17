@@ -15,17 +15,20 @@ Deno.serve(async (req: Request) => {
   if (!sid || !status) return text("missing MessageSid/MessageStatus", 400);
 
   const db = admin();
-  const { data: row } = await db.from("messages").select("id,body,trip_id,template").eq("twilio_sid", sid).maybeSingle();
+  const { data: row } = await db.from("messages").select("id,location_id,body,trip_id,template,to_e164").eq("twilio_sid", sid).maybeSingle();
   if (!row) return text("ok (unknown sid)", 200);      // a text sent outside the app; nothing to update
-  const r = row as { id: string; body: Record<string, unknown>; trip_id: string | null; template: string | null };
-  const body = { ...r.body, lastStatus: status, statusAt: new Date().toISOString() };
+  const r = row as { id: string; location_id: string; body: Record<string, unknown>; trip_id: string | null; template: string | null; to_e164: string | null };
+  const body: Record<string, unknown> = { ...r.body, lastStatus: status, statusAt: new Date().toISOString() };
   if (params.ErrorCode) body.errorCode = params.ErrorCode;
   await db.from("messages").update({ status, body, rev: Date.now() }).eq("id", r.id);
 
   // failed passenger texts land in Needs-you ("Call instead")
   if ((status === "failed" || status === "undelivered") && r.trip_id) {
-    await db.from("needs_you").insert({ location_id: (params.To && "") || "", kind: "sms_failed", trip_id: r.trip_id, note: `Text "${r.template}" to ${params.To} ${status} (code ${params.ErrorCode || "?"}) — call instead.` })
-      .then(({ error }) => { if (error) console.error(error.message); });
+    const { error } = await db.from("needs_you").insert({
+      location_id: r.location_id, kind: "sms_failed", trip_id: r.trip_id, phone_e164: r.to_e164,
+      note: `Text "${r.template}" to ${r.to_e164 || params.To} ${status} (code ${params.ErrorCode || "?"}) — call instead.`,
+    });
+    if (error) console.error(error.message);
   }
   return text("ok", 200);
 });

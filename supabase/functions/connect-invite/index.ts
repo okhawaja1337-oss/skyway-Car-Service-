@@ -7,7 +7,7 @@
 // → { ok, token, url, message_id }
 //
 // Also called internally by sms-in for the JOIN keyword (same body + { via: "join" }).
-import { admin, functionsBaseUrl, getDriver, getLocation, insertMessage, json, Json, publicBaseUrl, readJson, requireStr, serve, shortToken, toE164 } from "../_shared/db.ts";
+import { admin, functionsBaseUrl, getDriver, getLocation, insertMessage, issueConnectToken, json, Json, readJson, requireStr, serve, toE164 } from "../_shared/db.ts";
 import { sendSms } from "../_shared/twilio.ts";
 import { loadTemplates, render } from "../_shared/templates.ts";
 
@@ -16,17 +16,6 @@ interface Body extends Json {
   driver_id: string;
   phone?: string;
   via?: string;
-}
-
-export async function issueConnectToken(locationId: string, driverId: string): Promise<{ token: string; url: string; expires_at: string }> {
-  const token = shortToken(5);
-  const expires_at = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
-  const { error } = await admin().from("connect_tokens").insert({ location_id: locationId, token, driver_id: driverId, expires_at, used: false });
-  if (error) throw new Error(error.message);
-  const base = publicBaseUrl();
-  // go.<domain>/d/<token> rewrites to driver.html?t=<token> (Cloudflare Pages _redirects, see docs/SETUP.md)
-  const url = base ? `${base}/d/${token}` : `${functionsBaseUrl().replace(/\/functions\/v1$/, "")}/driver.html?t=${token}`;
-  return { token, url, expires_at };
 }
 
 serve(async (req) => {
