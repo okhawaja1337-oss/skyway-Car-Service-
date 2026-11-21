@@ -428,7 +428,7 @@ begin
   d := regexp_replace(v, '[^0-9+]', '', 'g');
   if d = '' then return null; end if;
   if left(d, 1) = '+' then return d; end if;
-  if length(d) = 10 then return '+1' || d; end if;           -- TODO(owner decision 10): default country code per location
+  if length(d) = 10 then return '+1' || d; end if;           -- +1 default (owner decision 10: NYC only for the pilot; per-location country code is a later Settings task)
   if length(d) = 11 and left(d, 1) = '1' then return '+' || d; end if;
   return '+' || d;
 end $$;

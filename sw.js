@@ -3,7 +3,7 @@
    so the page opens with no signal after the first load. The job itself lives in
    the URL hash and in localStorage, so nothing else is needed offline.
    Bump CACHE when any of the shell files change. */
-var CACHE = 'skyway-driver-v1';
+var CACHE = 'skyway-driver-v2';
 var SHELL = ['./driver.html', './driver.js', './driver.css', './manifest.webmanifest'];
 
 self.addEventListener('install', function (ev) {

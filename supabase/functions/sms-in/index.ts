@@ -6,14 +6,28 @@
 //       → keyword routing → write `messages` row → TwiML reply (or silence).
 //
 // Driver keywords:   JOIN · Y / N (open offer) · E A P D (stage codes) · W <min> · OK
+//                    ON / OFF [#job]  (shift, owner decision 7 — driver.js shiftText())
+//                    L [#job] <lat>,<lng> <map link> consent:<ISO>  (location pin, driver.js locText())
 // Passenger:         C / CANCEL · WHERE / ETA · 5 · YES / NO (flight move) · STOP / START / HELP
 // Anything else lands in the Messages panel (messages row, status 'unread').
-import { admin, audit, insertMessage, issueConnectToken, Json, raiseNeedsYou, readForm, setTripStage, text, toE164 } from "../_shared/db.ts";
+import { admin, audit, insertMessage, issueConnectToken, Json, nowMs, raiseNeedsYou, readForm, setTripStage, text, toE164 } from "../_shared/db.ts";
 import { twiml, validateSignature, webhookUrl } from "../_shared/twilio.ts";
-import { loadTemplates, render } from "../_shared/templates.ts";
+import { CONSENT_TEXT, loadTemplates, render } from "../_shared/templates.ts";
 
 const STAGE_CODES: Record<string, string> = { E: "enroute", A: "onloc", P: "pob", D: "done" };
 const STAGE_WORDS: Record<string, string> = { enroute: "on the way", onloc: "arrived", pob: "passenger on board", done: "completed" };
+
+/** "L #12 40.71234,-73.98765 https://maps.google.com/?q=… consent:2026-01-31T14:02:11.000Z" → {no, lat, lng, consentAt}
+ *  (same shape driver.js locText() sends and driver-link.js parseLocationText() reads). */
+function parseLocationText(raw: string): { no: string; lat: number; lng: number; consentAt: string } | null {
+  const m = raw.match(/^\s*L\b\s*(?:#\s*(\d+))?\s+(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/i);
+  if (!m) return null;
+  const lat = Number(m[2]), lng = Number(m[3]);
+  if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  const c = raw.match(/consent[:\s]+(\d{4}-\d{2}-\d{2}T[0-9:.]+Z?)/i);
+  const consentAt = c && !isNaN(new Date(c[1]).getTime()) ? new Date(c[1]).toISOString() : "";
+  return { no: m[1] || "", lat, lng, consentAt };
+}
 
 async function locationForNumber(to: string): Promise<{ id: string; name: string | null; phone_cc: string | null } | null> {
   // The business number that received the text identifies the location (one Messaging Service per region).
@@ -50,7 +64,7 @@ Deno.serve(async (req: Request) => {
 
   // who is texting?
   const { data: drv } = await db.from("drivers").select("id,name,body").eq("location_id", loc.id).eq("phone_e164", from).is("deleted_at", null).maybeSingle();
-  const driver = drv as { id: string; name: string | null } | null;
+  const driver = drv as { id: string; name: string | null; body: Json } | null;
   const { data: paxRow } = await db.from("passengers").select("id,sms_opt_out").eq("location_id", loc.id).eq("phone_e164", from).maybeSingle();
 
   const record = async (status: string, extra: Json = {}) =>
@@ -77,7 +91,11 @@ Deno.serve(async (req: Request) => {
     if (driver) {
       const t = await issueConnectToken(loc.id, driver.id);
       await record("join", { driver_id: driver.id, token: t.token });
-      return twiml(render(templates.driverConnect, { ...vars, connectUrl: t.url }));
+      // owner decision 7: the connect text always states the policy in the approved words (same as connect-invite),
+      // even when a location's template override left {consentLine} out
+      let reply = render(templates.driverConnect, { ...vars, connectUrl: t.url, consentLine: CONSENT_TEXT });
+      if (!reply.includes(CONSENT_TEXT)) reply = `${reply} ${CONSENT_TEXT}`;
+      return twiml(reply);
     }
     await db.from("pending_devices").insert({ location_id: loc.id, phone_e164: from });
     await raiseNeedsYou({ location_id: loc.id, kind: "pending_device", phone_e164: from, note: `New phone wants to join: ${from} — approve as which driver?` });
@@ -87,6 +105,38 @@ Deno.serve(async (req: Request) => {
 
   // --- driver replies ---
   if (driver) {
+    const body = driver.body || {};
+    // L [#job] <lat>,<lng> … consent:<ISO> — a location pin texted by driver.js (no-backend mode, or GPS fallback).
+    // The driver_locations insert fires the schema trigger (drivers.body.curLoc, on_shift) and the geofence webhook;
+    // owner decision 7: a live pin means On shift, and the first consent stamp on record is kept (never overwritten).
+    const pin = parseLocationText(raw);
+    if (pin) {
+      const now = new Date().toISOString();
+      const patch: Json = { onShift: true, shiftAt: body.onShift === true && body.shiftAt ? body.shiftAt : now };
+      const firstConsent = !!pin.consentAt && !(typeof body.consentAt === "string" && body.consentAt);
+      if (firstConsent) { patch.consentAt = pin.consentAt; patch.consentText = CONSENT_TEXT; }
+      await db.from("drivers").update({ body: { ...body, ...patch }, on_shift: true, rev: nowMs() }).eq("id", driver.id);
+      let tripId: string | null = null;
+      if (pin.no) {
+        const { data: tr } = await db.from("trips").select("id").eq("location_id", loc.id).eq("dispatch_no", Number(pin.no)).is("deleted_at", null).order("date", { ascending: false }).limit(1).maybeSingle();
+        tripId = (tr as { id: string } | null)?.id || null;
+      }
+      const { error: lErr } = await db.from("driver_locations").insert({ location_id: loc.id, driver_id: driver.id, at: now, lat: pin.lat, lng: pin.lng, trip_id: tripId, device_id: from, body: { source: "sms", twilio_sid: params.MessageSid || null, dispatchNo: pin.no || null } });
+      if (lErr) console.error("driver_locations insert failed", lErr.message);
+      if (firstConsent) await audit(loc.id, "consent_recorded", { driver_id: driver.id, actor: `driver:${driver.id}`, body: { consentAt: pin.consentAt, via: "sms" } });
+      await record("location", { trip_id: tripId, lat: pin.lat, lng: pin.lng, consentAt: pin.consentAt || null });
+      return twiml();
+    }
+    // ON / OFF [#job] — the phone's own switch only gates GPS sending; this text marks the driver On / Off shift in
+    // dispatch too (same as the console's Driver IQ → Driver status → Off shift button, driver-link.js setShift()).
+    const sh = word.match(/^(ON|OFF)(?:\s+SHIFT)?(?:\s+\d+)?$/);
+    if (sh) {
+      const on = sh[1] === "ON";
+      await db.from("drivers").update({ body: { ...body, onShift: on, shiftAt: new Date().toISOString() }, on_shift: on, rev: nowMs() }).eq("id", driver.id);
+      await audit(loc.id, on ? "shift_on" : "shift_off", { driver_id: driver.id, actor: `driver:${driver.id}`, body: { channel: "sms" } });
+      await record(on ? "shift_on" : "shift_off");
+      return twiml(`${vars.bizShort}: you are ${on ? "On shift — location is shared while you work" : "Off shift — location sharing stopped"}.`);
+    }
     // Y / N answer the newest open offer for this driver
     if (word === "Y" || word === "YES" || word === "N" || word === "NO") {
       const { data: offer } = await db.from("offers").select("id,trip_id").eq("driver_id", driver.id).is("response", null).gt("expires_at", new Date().toISOString()).order("sent_at", { ascending: false }).limit(1).maybeSingle();

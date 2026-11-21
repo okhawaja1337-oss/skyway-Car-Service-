@@ -231,7 +231,7 @@ The driver taps the link. The page shows their name and car, asks for a 6-digit 
 
 **Working a job (Uber-style):**
 
-1. A job offer arrives as a push notification **and** a text: pickup, drop-off, time, passenger first name, how many people, car type, fare (or "Account – no cash"), notes, flight. Two big buttons: **Accept** / **Pass**. The driver can also just reply **Y** or **N** by text.
+1. A job offer arrives as a push notification **and** a text: pickup, drop-off, time, passenger first name, how many people, car type, fare (or "Account — no cash"), notes, flight. Two big buttons: **Accept** / **Pass**. The driver can also just reply **Y** or **N** by text.
 2. No answer in **90 seconds**: the offer expires and the system automatically offers the next-best driver from Driver IQ's ranking. The dispatcher sees the cascade on the board ("Offered Mike → no answer → offered Sam") and can stop it or pick someone else at any time. If nobody is left, it lands in Needs-you.
 3. After accepting, the phone shows **one big button at a time**: **On my way** → **Arrived** (suggested automatically when the phone enters a 150 m circle around the pickup; confirms itself after 60 s inside the circle) → **Passenger on board** → **Complete**. Each tap updates the board instantly and sends the matching passenger text.
 4. **Navigate** opens Google Maps, Waze or Apple Maps with the pickup (then the drop-off) preloaded. The plotted course is also shown inside the app.
@@ -571,7 +571,7 @@ All tables: `id` (text, from `uid()` where the console created the row, else uui
 
 ## Appendix C — Settings keys added (all optional; old backups import unchanged)
 
-`settings.cloud {url, anonKey, locationId, enabled}` · `settings.twilioReady` · `settings.squareConnected` · `settings.simpleMode` · `settings.expertMode` · `settings.adminPin` · `settings.region` (mirror of the `locations` row) · `settings.automation {autoAssign, autoArrived, autoCharge, autoAirportFee, offerSeconds:90, geofenceM:150}` · `settings.square` (existing Virtual Terminal link — kept).
+`settings.cloud {url, anonKey, locationId, enabled, publicBaseUrl}` (`publicBaseUrl` = `https://go.<domain>`, the short-link base shown on the Cloud card — owner decision 2) · `settings.twilioReady` · `settings.squareConnected` · `settings.simpleMode` (default `true`, Phase A) · `settings.expertMode` · `settings.adminPin` · `settings.region` (mirror of the `locations` row) · `settings.flightProvider` (`'aerodatabox'` — owner decision 12; read by the Phase 6 `flight-poll` function) · `settings.automation {autoAssign, autoArrived, autoCharge, autoAirportFee, offerSeconds:90, geofenceM:150}` · `settings.square` (existing Virtual Terminal link — kept).
 
 ## Appendix D — Nothing removed
 

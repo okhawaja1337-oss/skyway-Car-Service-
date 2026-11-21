@@ -1,8 +1,8 @@
 // Square helpers: Payments (delayed capture), Checkout payment links, Orders +
 // Invoices, Refunds, webhook signature verification.
 // Env vars:
-//   SQUARE_ACCESS_TOKEN            production (or sandbox) access token — per-location OAuth tokens
-//                                  live in Vault once "Connect Square" ships (TODO owner decision 3)
+//   SQUARE_ACCESS_TOKEN            production (or sandbox) access token. Owner decision 3: personal access token
+//                                  for the pilot; OAuth Connect later if a second location is added
 //   SQUARE_LOCATION_ID             default Square location (locations.square_location_id overrides)
 //   SQUARE_WEBHOOK_SIGNATURE_KEY   from the webhook subscription in the Square developer dashboard
 //   SQUARE_ENV                     "production" (default) | "sandbox"

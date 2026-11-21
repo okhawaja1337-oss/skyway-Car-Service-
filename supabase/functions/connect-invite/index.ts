@@ -24,12 +24,11 @@
 //    → { ok, location_id, driver: {id, name, carNo}, biz: {name, phone}, consentAt }
 import { admin, audit, functionsBaseUrl, getDriver, getLocation, insertMessage, issueConnectToken, json, Json, nowMs, readJson, requireStr, serve, toE164 } from "../_shared/db.ts";
 import { sendSms } from "../_shared/twilio.ts";
-import { loadTemplates, render } from "../_shared/templates.ts";
+import { CONSENT_TEXT, loadTemplates, render } from "../_shared/templates.ts";
 
-// Owner decision 7 (default): on-shift-only tracking, 30-day raw retention, and THIS exact consent sentence.
-// It must stay byte-identical to driver.js CONSENT_TEXT: the connect text carries it, and action "complete"
-// refuses to record consent given under any other wording. Do not reword or shorten here.
-const CONSENT_TEXT = "Skyway tracks this phone's location only while you are On shift, to dispatch jobs and show passengers their ETA. Raw location data is kept 30 days.";
+// Owner decision 7 (default): on-shift-only tracking, 30-day raw retention, and the exact consent sentence
+// CONSENT_TEXT (one definition in _shared/templates.ts, byte-identical to driver.js): the connect text carries it,
+// and action "complete" refuses to record consent given under any other wording.
 const CONSENT_MAX_AGE_MS = 48 * 60 * 60 * 1000;   // a client consentAt older than this is replaced by the server time
 const CLOCK_SKEW_MS = 5 * 60 * 1000;              // ... as is one more than 5 min in the future (phone clock ahead)
 

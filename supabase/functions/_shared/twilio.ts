@@ -35,12 +35,26 @@ export interface SendSmsResult {
   raw: Record<string, unknown>;
 }
 
+/**
+ * Keep a text GSM-7: one em dash, arrow or curly quote switches the whole SMS to UCS-2 (70 chars/segment instead of
+ * 160), so a 2-segment job offer becomes 3–4. Templates keep their typography on screen (console, driver page, the
+ * `messages` row); only the body handed to Twilio is normalized. Same pass as the console's messages.js gsmSafe().
+ */
+export function gsmSafe(s: string): string {
+  return String(s ?? "")
+    .replace(/[—–]/g, "-")        // — –  → -
+    .replace(/→/g, "to")               // →    → to
+    .replace(/[‘’]/g, "'")        // ‘ ’  → '
+    .replace(/[“”]/g, '"')        // “ ”  → "
+    .replace(/…/g, "...");             // …    → ...
+}
+
 /** Twilio Messages API: POST /2010-04-01/Accounts/{AccountSid}/Messages.json */
 export async function sendSms(input: SendSmsInput): Promise<SendSmsResult> {
   const { sid } = creds();
   const form = new URLSearchParams();
   form.set("To", input.to);
-  form.set("Body", input.body);
+  form.set("Body", gsmSafe(input.body));
   const mss = input.messagingServiceSid || Deno.env.get("TWILIO_MESSAGING_SERVICE_SID") || "";
   if (input.from) form.set("From", input.from);
   else if (mss) form.set("MessagingServiceSid", mss);
@@ -101,10 +115,10 @@ export async function lookupE164(phone: string, countryCode = "US"): Promise<{ e
   return { e164: String(data.phone_number || phone), valid: data.valid !== false };
 }
 
-/** Minimal TwiML reply for an inbound SMS (empty = no auto-reply). */
+/** Minimal TwiML reply for an inbound SMS (empty = no auto-reply). The reply is a text too, so it gets the same GSM-7 pass. */
 export function twiml(reply?: string): Response {
   const body = reply
-    ? `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(reply)}</Message></Response>`
+    ? `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(gsmSafe(reply))}</Message></Response>`
     : `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`;
   return new Response(body, { status: 200, headers: { "Content-Type": "text/xml" } });
 }

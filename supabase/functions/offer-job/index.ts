@@ -47,15 +47,10 @@ async function sendOffer(locId: string, tripId: string, rank: number, driverId: 
   const driver = drv as { phone_e164: string | null; body: Json } | null;
   const to = toE164(driver?.phone_e164 || (driver?.body.phone as string), loc.phone_cc || "+1");
   const base = publicBaseUrl();
-  const vars = tripVars({ trip: trip.body, location: loc, settings: ((settingsRow as { body: Json } | null)?.body) || {}, driver: driver?.body || null, extra: { jobUrl: base ? `${base}/j/${token}` : "", offerSeconds: seconds } });
   // Owner decision 6 (default): drivers DO see the fare on offers; Account rides read "Account — no cash".
-  // The PAY TYPE governs: an account customer's ride that dispatch switched to Cash / Credit Card (the console's
-  // edit-order Payment select allows it, and Earnings / cash_collected are pay-type based) must still read as a
-  // cash fare so the driver collects it. The account is only the fallback when the pay type is blank or says
-  // "account" in any spelling. Same rule as driver.js fareLine() and driver-link.js isAccountRide().
-  const payType = String(trip.pay_type || trip.body.payType || "").trim();
-  const onAccount = /account/i.test(payType) || (!payType && !!(trip.account_id || trip.body.accountId));
-  vars.fareOrAccount = onAccount ? "Account — no cash" : `${String(vars.fare)} + tolls`;
+  // {fareOrAccount} comes from tripVars() → templates.ts isAccountRide() (pay type first, account only as the
+  // fallback when the pay type is blank) — the one definition shared with messages.js / driver-link.js / driver.js.
+  const vars = tripVars({ trip: trip.body, location: loc, settings: ((settingsRow as { body: Json } | null)?.body) || {}, driver: driver?.body || null, extra: { jobUrl: base ? `${base}/j/${token}` : "", offerSeconds: seconds } });
   if (to) {
     try {
       const sms = await sendSms({ to, body: render(templates.driverJob, vars), messagingServiceSid: loc.twilio_messaging_sid || undefined, statusCallback: `${functionsBaseUrl()}/sms-status` });

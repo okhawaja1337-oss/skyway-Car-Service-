@@ -30,6 +30,7 @@ Why: phones only share GPS, install as an app and receive push over HTTPS. The l
    /t/:token   /track.html?t=:token    302
    /r/:token   /pay.html?t=:token      302
    ```
+   What works today: `/d/<token>` (connect phone → `driver.html`) works. `/j/<token>` is wired but not functional yet — `driver.js` does not resolve short offer tokens until the offer page lands (it still opens jobs from the full `#` payload the console puts in the link). `/t/` and `/r/` return 404 until `track.html` / `pay.html` exist (Phases 3–4).
 6. Open `https://app.<yourdomain>` — the console loads exactly as before, from your browser's storage on that computer.
 
 ---
@@ -59,7 +60,9 @@ supabase link --project-ref abcdefgh   # the part before .supabase.co in the Pro
 
 # deploy everything in supabase/functions/
 supabase functions deploy sync-bulk
-supabase functions deploy connect-invite
+# connect-invite is also called by driver.html (action "complete") with no login — the single-use 24 h connect
+# token is the credential — so the gateway's JWT check must be off or the driver's POST gets a 401:
+supabase functions deploy connect-invite --no-verify-jwt
 supabase functions deploy sms-out
 supabase functions deploy notify
 supabase functions deploy offer-job
@@ -87,6 +90,13 @@ supabase functions deploy square-hook --no-verify-jwt
 | `GOOGLE_MAPS_SERVER_KEY` | step 6.4 |
 
 `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are provided to the functions automatically.
+
+3.6b **driver.html metas** — the driver page is a static file, so it finds the cloud through two `<meta>` tags in `driver.html` (the developer fills them before deploying to Pages):
+
+| Meta | Value | Needed? |
+|---|---|---|
+| `skyway-functions` | the Edge Functions base URL, `https://abcdefgh.supabase.co/functions/v1` | **Required** for the connect link to record consent in the cloud. Empty = no-backend mode: consent is kept on the phone and rides along in the first `L` location text. |
+| `skyway-anon-key` | the project's **anon public key** (step 2.2) | Only if `connect-invite` was deployed **with** JWT verification (without `--no-verify-jwt`); then the page sends it so the gateway lets the POST through. Leave empty when the function is deployed as shown above. |
 
 3.7 **Scheduled jobs** (Database → Extensions → enable `pg_cron` and `pg_net`, then SQL Editor):
 
@@ -123,7 +133,7 @@ The existing business number keeps handling calls exactly as today; Twilio only 
 
 ### 4.3 A2P 10DLC registration (required in the US for a local number)
 1. **Messaging → Regulatory Compliance → Brand registration** (also found under "Trust Hub"): legal business name, **EIN**, address, website, contact. Fee about $4 (standard) once; vetting $40 optional.
-2. **Campaign registration**: use case **Customer Care / Delivery notifications**. Description: *"Ride confirmations, driver assignment, ETA, arrival and receipt texts for passengers of a car service; job offers and status to drivers. Opt-in by booking by phone or web; reply STOP to opt out."* In the **opt-in description** field also quote the exact sentence dispatchers say on every phone booking (owner decision 8): *"By booking you agree to receive ride updates by text; reply STOP to opt out."* Sample messages: copy two passenger texts from `PRODUCT-DESIGN.md` section 5. Campaign vetting ≈ $15 one-time + $1.50–10/month. Approval 1–3 weeks.
+2. **Campaign registration**: use case **Customer Care / Delivery notifications**. Description: *"Ride confirmations, driver assignment, ETA, arrival and receipt texts for passengers of a car service; job offers and status to drivers. Opt-in by booking by phone or web; reply STOP to opt out."* In the **opt-in description** field quote, verbatim, the exact sentence dispatchers say on every phone booking (owner decision 8): "By booking you agree to receive ride updates by text; reply STOP to opt out." — copy it character for character; it is the same sentence printed on the dispatcher cheat sheet and shown under the Booked template in Settings → Messages. Sample messages: copy two passenger texts from `PRODUCT-DESIGN.md` section 5. Campaign vetting ≈ $15 one-time + $1.50–10/month. Approval 1–3 weeks.
 
 ### 4.4 Messaging Service
 1. **Messaging → Services → Create Messaging Service**, name `Skyway`. Use case: *Notify my users*.
@@ -137,7 +147,7 @@ The existing business number keeps handling calls exactly as today; Twilio only 
 ### 4.5 Test
 In the console, **Settings → Messages**, then on any trip card press **Text** — with texting ON (step 7) the message goes out from the business number and its delivery check mark appears on the card. With texting OFF the button still opens your own phone's Messages app with the text prefilled (works today).
 
-Keep texts to plain (GSM-7) punctuation: one em dash or curly quote switches the whole SMS to UCS-2 (70 characters per segment instead of 160), so a job offer that fits in 2 segments becomes 3–4. The driver offer therefore reads "JOB #12 - Today 3:40 PM" and "Account - no cash" in texts (plain hyphen), even though the console and driver page show the em dash. If you edit a template under Settings → Messages, type a hyphen, not a dash.
+Keep texts to plain (GSM-7) punctuation: one em dash or curly quote switches the whole SMS to UCS-2 (70 characters per segment instead of 160), so a job offer that fits in 2 segments becomes 3–4. The driver offer therefore reads "JOB #12 - Today 3:40 PM" and "Account - no cash" in texts (plain hyphen), even though the console and driver page show the em dash. This happens automatically as the text leaves (`sendSms` on the server, the `sms:` link / copy in the console swap dashes, arrows, curly quotes and "…" for plain characters), so templates under Settings → Messages may keep their typography — but a plain hyphen is still the safest thing to type.
 
 ---
 
