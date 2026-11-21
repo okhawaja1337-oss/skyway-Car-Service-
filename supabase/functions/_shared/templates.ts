@@ -4,6 +4,21 @@
 // same keys so a template edited in Settings → Messages can be mirrored here.
 import { admin, Json } from "./db.ts";
 
+// Owner decision 7 (default): on-shift-only tracking, 30-day raw retention, and THIS exact consent sentence.
+// It must stay byte-identical to driver.js / driver-link.js CONSENT_TEXT: the connect text (connect-invite and the
+// JOIN reply in sms-in) carries it as {consentLine}, and connect-invite action "complete" refuses to record consent
+// given under any other wording. Do not reword or shorten here.
+export const CONSENT_TEXT = "Skyway tracks this phone's location only while you are On shift, to dispatch jobs and show passengers their ETA. Raw location data is kept 30 days.";
+
+/** Owner decision 6: what counts as an Account ride. The PAY TYPE governs: an account customer's ride that dispatch
+ *  switched to Cash / Credit Card (the console's edit-order Payment select allows it, and Earnings / cash_collected are
+ *  pay-type based) must still read as a cash fare so the driver collects it; the account is only the fallback when the
+ *  pay type is blank. Same rule as messages.js isAccountTrip(), driver-link.js isAccountRide() and driver.js fareLine(). */
+export function isAccountRide(payType: unknown, accountId: unknown): boolean {
+  const pay = String(payType || "").trim();
+  return /account/i.test(pay) || (!pay && !!accountId);
+}
+
 export const DEFAULT_TEMPLATES: Record<string, string> = {
   // passenger lifecycle (1–9)
   // Owner decision 8 (default): every booking confirmation ends with the opt-out line.  The full consent
@@ -22,7 +37,8 @@ export const DEFAULT_TEMPLATES: Record<string, string> = {
   canceled: "Your {biz} ride #{dispatchNo} is canceled. Reply or call {bizPhone} to rebook.",
   cancelRequested: "{biz}: we received your cancel request for ride #{dispatchNo}. A dispatcher will confirm shortly.",
   // driver
-  driverConnect: "{bizShort}: Tap to connect your phone to dispatch: {connectUrl} (link good for 24h)",
+  // {consentLine} = CONSENT_TEXT (owner decision 7); connect-invite / sms-in append it when a location override drops it
+  driverConnect: "{bizShort}: Tap to connect your phone to dispatch: {connectUrl} (link good for 24h) {consentLine}",
   driverJob: "{bizShort} JOB #{dispatchNo} — {dayWord} {time12}. PU: {pu}. DO: {do}. {paxName}, {pax} pax, {vtype}. {fareOrAccount}. Reply Y to accept, N to pass, or tap {jobUrl} ({offerSeconds} sec)",
   driverGone: "{bizShort}: Job #{dispatchNo} was given to another driver.",
   driverChange: "{bizShort}: Job #{dispatchNo} changed — {change}. Reply OK.",
@@ -124,7 +140,8 @@ export function tripVars(opts: {
     vtype: t.vtype || "",
     // Owner decision 6 (default): drivers see the fare on job offers; Account rides show "Account — no cash"
     // (same wording as driver.js fareLine()).  Override per location by editing the `driverJob` template row.
-    fareOrAccount: t.payType === "Account" ? "Account — no cash" : `${fmtMoney(fare, currency)} + tolls`,
+    // isAccountRide() is the one definition of "Account ride" (pay type first), shared with offer-job.
+    fareOrAccount: isAccountRide(t.payType, t.accountId) ? "Account — no cash" : `${fmtMoney(fare, currency)} + tolls`,
     driverName: d.name ? `${firstName(d.name)}${String(d.name).trim().split(/\s+/)[1] ? ` ${String(d.name).trim().split(/\s+/)[1][0]}.` : ""}` : "your driver",
     driverFirst: firstName(d.name) || "Your driver",
     car: carNo ? `Car ${carNo}` : "", vehicle: vehicleDesc, vehicleShort: [v.color, v.model, v.plate].filter(Boolean).join(" "), plate: v.plate || "",

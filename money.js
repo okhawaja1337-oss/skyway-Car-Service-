@@ -8,9 +8,20 @@
      rides" table (Completed card rides not yet marked paid) with
      Charge card (Square Virtual Terminal) / Paid / Mark cash / Send pay link,
      and an "Open invoices" summary per account that jumps to Invoicing.
-   - trip.payment = {status:'paid'|'pending-vt'|'link-sent'|'noshow-fee', method?, at, link?,
-     amount?, cardOnFile?}  — cardOnFile:true (or a cloud sourceId / an 'authorized'
-     hold from square-charge) is what lets the dispatcher charge a no-show fee.
+   - trip.payment = {status:'paid'|'pending-vt'|'link-sent'|'noshow-pending'|'noshow-fee', method?,
+     at, link?, amount?, cardOnFile?, via?}  — cardOnFile:true (or a cloud sourceId / an
+     'authorized' hold from square-charge) is what lets the dispatcher charge a no-show fee.
+     Fields square-charge wrote (paymentId, holdCents, sourceId, customerId, authorizedAt…) are
+     always preserved: this module only ever merges into trip.payment, never replaces it.
+   - No-show fee flow (two steps, like "Charge card" → "Paid"):
+       * no cloud hold: "Charge no-show fee" opens the Square Virtual Terminal and records
+         status 'noshow-pending' (via:'vt'); nothing is recorded when the pop-up is blocked.
+         "Fee paid" then records 'noshow-fee'. The row never reads "charged" before that.
+       * cloud hold on the trip (payment.status 'authorized' + paymentId): the VT is NOT opened
+         (that would charge the card a second time). With Cloud on, the fee is captured from the
+         existing hold through square-charge {action:'capture', kind:'noshow_fee'} and the rest
+         of the hold is released (owner decision 5); with Cloud off the dispatcher is told to
+         complete the hold in Square and press "Fee paid".
    - STATE.settings.squarePayLink (Square payment-link URL) — field added to
      the Settings → Region card (#rg_extra slot from region.js) or its own card.
    - Owner decision 4 (accepted defaults):
@@ -27,7 +38,7 @@
    - All amounts go through window.money (region.js makes it currency-aware).
 
    Public API: window.Money = {render, unpaid, total, gratuity, charge, paid, cash,
-     payLink, noShows, noShowFeeAmount, hasCard, noShowFee, openInvoices, kpis}
+     payLink, noShows, noShowFeeAmount, hasCard, noShowFee, noShowPaid, openInvoices, kpis}
    Plain ES2019, no build step. Never edits index.html.
    ====================================================================== */
 (function () {
@@ -127,6 +138,20 @@
     return Math.round(Number(t.fare) || 0);   // 'base' (default): the base fare, no tolls, no tip, no card fee
   }
   function feeCharged(t) { return !!(t && t.payment && (t.payment.status === 'noshow-fee' || t.payment.status === 'paid')); }
+  function feePending(t) { return !!(t && t.payment && t.payment.status === 'noshow-pending'); }
+  /* The Square authorization square-charge put on the trip at booking (owner decision 5), or null. Still
+     recognised while the fee is pending (priorStatus 'authorized'), so a retry never reaches the Virtual Terminal. */
+  function cloudHold(t) {
+    var p = (t && t.payment) || {}; if (!p.paymentId) return null;
+    if (p.status === 'authorized' || (p.status === 'noshow-pending' && p.priorStatus === 'authorized')) return p;
+    return null;
+  }
+  function holdAmount(p) { return round2((Number(p && p.holdCents) || 0) / 100); }
+  function cloudReady() { var c = window.Cloud; try { return !!(c && typeof c.fn === 'function' && typeof c.enabled === 'function' && c.enabled() && typeof c.configured === 'function' && c.configured()); } catch (e) { return false; } }
+  function cloudLoc() { try { return String((window.Cloud.get() || {}).locationId || ''); } catch (e) { return ''; } }
+  /* Merge into trip.payment — never replace it, so paymentId / holdCents / sourceId from the cloud survive. */
+  function setPayment(t, patch) { t.payment = Object.assign({}, t.payment || {}, patch); return t.payment; }
+  function undoable(label, fn, t) { if (window.Simple && typeof window.Simple.undoable === 'function') return window.Simple.undoable(label, fn, [t.id]); return fn(); }
   function cutoff30() { var d = new Date(); d.setDate(d.getDate() - 30); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
   /* Card no-shows from the last 30 days — the ones the dispatcher may charge, plus the ones already charged (shown with a chip). */
   function noShows() {
@@ -208,28 +233,91 @@
   }
   /* Owner decision 4: no-show fee. Dispatcher-only — this runs from the "Charge no-show fee"
      button and nowhere else (no status hook, no timer). Refuses without a card on file.
-     Same Square path as "Charge card": opens the Virtual Terminal for the amount. */
+     Two steps like "Charge card" → "Paid": this opens Square and records 'noshow-pending';
+     noShowPaid() records 'noshow-fee' once the dispatcher saw the charge go through.
+     A trip that already carries a Square hold (owner decision 5) is never sent to the Virtual
+     Terminal — the fee is captured from that hold instead (see noShowFeeFromHold). */
   function noShowFee(id) {
     var t = findTrip(id); if (!t) return false;
-    if (t.status !== 'No-Show') { toast('#' + (t.dispatchNo || '') + ' is ' + (t.status || 'not a no-show') + ' — the no-show fee is only for No-Show rides.', true); return false; }
-    if (!isCard(t)) { toast('#' + (t.dispatchNo || '') + ' is not a card ride — no no-show fee.', true); return false; }
-    if (!hasCard(t)) { toast('No card on file for #' + (t.dispatchNo || '') + ' — the no-show fee cannot be charged.', true); return false; }
-    if (feeCharged(t)) { toast('#' + (t.dispatchNo || '') + ' already has its no-show fee recorded.', true); return false; }
+    var no = '#' + (t.dispatchNo || '');
+    if (t.status !== 'No-Show') { toast(no + ' is ' + (t.status || 'not a no-show') + ' — the no-show fee is only for No-Show rides.', true); return false; }
+    if (!isCard(t)) { toast(no + ' is not a card ride — no no-show fee.', true); return false; }
+    if (!hasCard(t)) { toast('No card on file for ' + no + ' — the no-show fee cannot be charged.', true); return false; }
+    if (feeCharged(t)) { toast(no + ' already has its no-show fee recorded.', true); return false; }
     var amt = noShowFeeAmount(t);
-    if (!(amt > 0)) { toast('No-show fee is zero for #' + (t.dispatchNo || '') + ' (no base fare).', true); return false; }
-    if (!window.confirm('Charge the no-show fee of ' + money(amt) + ' (base fare) to the card on file for #' + (t.dispatchNo || '') + (t.passenger ? ' — ' + t.passenger : '') + '?')) return false;
-    var ok = false;
-    var run = function () {
-      ok = openUrl(vtUrl());
-      var prev = t.payment || {};
-      t.payment = { status: 'noshow-fee', amount: amt, at: nowISO(), method: 'card', cardOnFile: true, sourceId: prev.sourceId, customerId: prev.customerId };
+    if (!(amt > 0)) { toast('No-show fee is zero for ' + no + ' (no base fare).', true); return false; }
+    var hold = cloudHold(t);
+    if (hold) return noShowFeeFromHold(t, hold, amt);
+    if (!window.confirm('Charge the no-show fee of ' + money(amt) + ' (base fare) to the card on file for ' + no + (t.passenger ? ' — ' + t.passenger : '') + '?')) return false;
+    var ok = openUrl(vtUrl());
+    if (!ok) {   // nothing recorded: the dispatcher never reached Square, so the button stays and the row never says "charged"
+      toast('Could not open Square (pop-up blocked) — nothing was recorded for ' + no + '. Allow pop-ups or open Square from Settings, then press the button again.', true);
+      render();
+      return false;
+    }
+    undoable('No-show fee ' + money(amt) + ' on ' + no + ' — Square opened', function () {
+      setPayment(t, { status: 'noshow-pending', via: 'vt', amount: amt, at: nowISO(), method: 'card', cardOnFile: true });
       save();
-    };
-    if (window.Simple && typeof window.Simple.undoable === 'function') window.Simple.undoable('No-show fee ' + money(amt) + ' on #' + (t.dispatchNo || ''), run, [t.id]);
-    else run();
-    toast('Enter ' + money(amt) + ' in Square for #' + (t.dispatchNo || '') + ' (no-show fee).' + (ok ? '' : ' Pop-up blocked — open Square from Settings.'), !ok);
+    }, t);
+    toast('Enter ' + money(amt) + ' in Square for ' + no + ' (no-show fee), then press "Fee paid".');
     render();
-    return ok;
+    return true;
+  }
+  /* The passenger's card already holds estimate × 1.2 + tolls (square-charge 'authorize'). Charging the
+     Virtual Terminal would be a SECOND charge while the hold sits on the card for up to 7 days, so:
+     Cloud on  → square-charge {action:'capture', kind:'noshow_fee', final_cents} completes the hold for the fee
+                 (UpdatePayment + CompletePayment) and Square releases the remainder — one charge, no VT.
+     Cloud off → tell the dispatcher to complete the hold in Square (payment id shown) and press "Fee paid".
+     Returns the capture Promise when Cloud is on, false otherwise. */
+  function noShowFeeFromHold(t, hold, amt) {
+    var no = '#' + (t.dispatchNo || ''), held = holdAmount(hold);
+    var msg = 'Take the no-show fee of ' + money(amt) + ' (base fare) for ' + no + (t.passenger ? ' — ' + t.passenger : '')
+      + ' from the ' + money(held) + ' hold already on the card? The rest of the hold is released. The card is not charged a second time.';
+    if (!window.confirm(msg)) return false;
+    if (!cloudReady()) {
+      undoable('No-show fee ' + money(amt) + ' on ' + no + ' — complete the hold in Square', function () {
+        setPayment(t, { status: 'noshow-pending', via: 'hold', priorStatus: 'authorized', amount: amt, at: nowISO(), method: 'card', cardOnFile: true });
+        save();
+      }, t);
+      toast('Cloud is off on this station. In Square Dashboard → Transactions, complete the ' + money(held) + ' hold (payment ' + hold.paymentId + ') for ' + money(amt) + ', then press "Fee paid". Do not key the card again.', true);
+      render();
+      return false;
+    }
+    setPayment(t, { status: 'noshow-pending', via: 'cloud', priorStatus: 'authorized', amount: amt, at: nowISO(), method: 'card', cardOnFile: true });
+    save(); render();
+    toast('Taking ' + money(amt) + ' from the hold for ' + no + '…');
+    return window.Cloud.fn('square-charge', { action: 'capture', kind: 'noshow_fee', location_id: cloudLoc(), trip_id: String(t.id), final_cents: Math.round(amt * 100), tip_cents: 0 })
+      .then(function (res) {
+        var cur = findTrip(t.id) || t;
+        if (!res || !res.ok) throw new Error((res && res.reason) || 'capture refused');
+        setPayment(cur, { status: 'noshow-fee', via: 'cloud', amount: amt, at: nowISO(), method: 'card', cardOnFile: true, paymentId: res.payment_id || cur.payment.paymentId, receiptUrl: res.receipt_url || cur.payment.receiptUrl || null });
+        save(); toast('No-show fee ' + money(amt) + ' taken from the hold for ' + no + '. The rest of the hold is released.'); render();
+        return true;
+      })
+      .catch(function (err) {
+        var cur = findTrip(t.id) || t;
+        if (feePending(cur) && cur.payment.via === 'cloud') { cur.payment = hold; save(); }   // put the authorization back exactly as it was (hold is the untouched prior object)
+        toast('Could not take the no-show fee from the hold for ' + no + ': ' + ((err && err.message) || err) + '. Check Needs-you / Square.', true);
+        render();
+        return false;
+      });
+  }
+  /* Step 2 of the no-show fee: the dispatcher saw the charge go through in Square (or completed the hold there). */
+  function noShowPaid(id) {
+    var t = findTrip(id); if (!t) return false;
+    var no = '#' + (t.dispatchNo || '');
+    if (t.status !== 'No-Show' || !isCard(t)) { toast(no + ' is not a card No-Show — nothing to record.', true); return false; }
+    if (feeCharged(t)) { toast(no + ' already has its no-show fee recorded.', true); return false; }
+    if (!feePending(t) && !hasCard(t)) { toast('No card on file for ' + no + ' — the no-show fee cannot be charged.', true); return false; }
+    var amt = (t.payment && Number(t.payment.amount) > 0) ? round2(t.payment.amount) : noShowFeeAmount(t);
+    if (!(amt > 0)) { toast('No-show fee is zero for ' + no + ' (no base fare).', true); return false; }
+    undoable('No-show fee ' + money(amt) + ' recorded on ' + no, function () {
+      setPayment(t, { status: 'noshow-fee', amount: amt, at: nowISO(), method: 'card', cardOnFile: true });
+      save();
+    }, t);
+    toast(no + ' no-show fee ' + money(amt) + ' recorded as charged.');
+    render();
+    return true;
   }
 
   /* ---------- styles ---------- */
@@ -269,18 +357,31 @@
     if (p.status === 'pending-vt') return '<span class="mny-chip vt" title="Square Virtual Terminal opened ' + esc(fmtWhen(p.at)) + '">in Square ' + esc(fmtWhen(p.at)) + '</span>';
     if (p.status === 'link-sent') return '<span class="mny-chip link" title="Pay link texted ' + esc(fmtWhen(p.at)) + '">link sent ' + esc(fmtWhen(p.at)) + '</span>';
     if (p.status === 'failed') return '<span class="mny-chip">card failed</span>';
+    if (p.status === 'authorized') return '<span class="mny-chip link" title="Square is holding ' + esc(money(holdAmount(p))) + ' on the card (payment ' + esc(p.paymentId || '') + ') — the hold releases when a smaller amount is captured">hold ' + esc(money(holdAmount(p))) + '</span>';
+    if (p.status === 'noshow-pending') {
+      if (p.via === 'cloud') return '<span class="mny-chip vt" title="Taking the no-show fee from the hold ' + esc(fmtWhen(p.at)) + '">taking from hold ' + esc(fmtWhen(p.at)) + '</span>';
+      if (p.via === 'hold') return '<span class="mny-chip vt" title="Complete the hold in Square for ' + esc(money(p.amount)) + ', then press Fee paid">complete hold in Square ' + esc(fmtWhen(p.at)) + '</span>';
+      return '<span class="mny-chip vt" title="Square Virtual Terminal opened ' + esc(fmtWhen(p.at)) + ' — press Fee paid once the charge went through">in Square ' + esc(fmtWhen(p.at)) + '</span>';
+    }
     if (p.status === 'noshow-fee') return '<span class="mny-chip vt" title="No-show fee ' + esc(money(p.amount)) + ' charged ' + esc(fmtWhen(p.at)) + '">fee ' + esc(money(p.amount)) + ' ' + esc(fmtWhen(p.at)) + '</span>';
+    if (p.status === 'paid' && t.status === 'No-Show') { var amt = p.amount != null ? p.amount : (Number(p.amountCents) || 0) / 100; return '<span class="mny-chip vt" title="No-show fee charged ' + esc(fmtWhen(p.paidAt || p.at)) + '">fee ' + esc(money(amt)) + '</span>'; }
     return '';
   }
   function noShowRows(list) {
     var h = '<div class="tbl-scroll"><table class="data" id="mny_noshow"><thead><tr><th>#</th><th>When</th><th>Passenger</th><th>Route</th><th class="num">Fee</th><th>No-show fee</th></tr></thead><tbody>';
     list.forEach(function (t) {
       var whenTxt = (t.date === todayStr() ? 'Today' : esc(t.date || '')) + (t.time ? ' ' + esc(fmtTime12(t.time)) : '');
-      var card = hasCard(t), done = feeCharged(t), amt = noShowFeeAmount(t);
+      var card = hasCard(t), done = feeCharged(t), pend = feePending(t), hold = cloudHold(t), amt = noShowFeeAmount(t);
       var btn;
       if (done) btn = '<span class="hint" style="margin:0;">charged</span>';
       else if (!card) btn = '<button class="btn btn-ghost btn-sm" type="button" disabled title="No card on file">Charge no-show fee</button>';
-      else btn = '<button class="btn btn-navy btn-sm" type="button" data-act="noshow" data-id="' + esc(t.id) + '" title="Charge the base fare (' + esc(money(amt)) + ') to the card on file — dispatcher only, never automatic">Charge no-show fee</button>';
+      else {
+        var title = hold
+          ? 'Take ' + money(amt) + ' from the ' + money(holdAmount(hold)) + ' hold already on the card — the rest is released, the card is not charged twice. Dispatcher only, never automatic'
+          : 'Open Square to charge the base fare (' + money(amt) + ') to the card on file — dispatcher only, never automatic';
+        btn = '<button class="btn btn-navy btn-sm" type="button" data-act="noshow" data-id="' + esc(t.id) + '" title="' + esc(title) + '">' + (hold ? 'Take fee from hold' : (pend ? 'Open Square again' : 'Charge no-show fee')) + '</button>';
+        if (pend) btn += '<button class="btn btn-go btn-sm" type="button" data-act="noshowpaid" data-id="' + esc(t.id) + '" title="The no-show fee went through in Square — record it as charged">Fee paid</button>';
+      }
       h += '<tr data-trip="' + esc(t.id) + '"><td>' + esc(t.dispatchNo || '') + '</td><td>' + whenTxt + '</td>'
         + '<td>' + esc(t.passenger || '—') + (t.phone ? '<div class="hint" style="margin:0;">' + esc(fmtPhone(t.phone)) + '</div>' : '') + '</td>'
         + '<td>' + esc(shortAddr(t.puAddr)) + ' &rarr; ' + esc(shortAddr(t.doAddr)) + chip(t) + '</td>'
@@ -339,6 +440,7 @@
       else if (a === 'cash') cash(id);
       else if (a === 'link') payLink(id);
       else if (a === 'noshow') noShowFee(id);
+      else if (a === 'noshowpaid') noShowPaid(id);
       else if (a === 'invoicing') { if (typeof window.goTab === 'function') window.goTab('invoicing'); }
     } catch (err) { try { console.error('[money]', err); } catch (e2) {} }
   }
@@ -383,7 +485,7 @@
   function earningsActive() { var v = byId('view-earnings'); return !!(v && v.classList.contains('active')); }
 
   /* ---------- public API ---------- */
-  window.Money = { render: render, unpaid: unpaid, total: total, gratuity: gratuity, kpis: kpis, openInvoices: openInvoices, charge: charge, paid: paid, cash: cash, payLink: payLink, noShows: noShows, noShowFeeAmount: noShowFeeAmount, hasCard: hasCard, noShowFee: noShowFee, renderSettings: renderSettingsField };
+  window.Money = { render: render, unpaid: unpaid, total: total, gratuity: gratuity, kpis: kpis, openInvoices: openInvoices, charge: charge, paid: paid, cash: cash, payLink: payLink, noShows: noShows, noShowFeeAmount: noShowFeeAmount, hasCard: hasCard, noShowFee: noShowFee, noShowPaid: noShowPaid, renderSettings: renderSettingsField };
 
   /* ---------- settings defaults (owner decisions 4) — saved only when they were missing ---------- */
   function ensureDefaults() {

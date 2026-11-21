@@ -137,6 +137,8 @@ The existing business number keeps handling calls exactly as today; Twilio only 
 ### 4.5 Test
 In the console, **Settings → Messages**, then on any trip card press **Text** — with texting ON (step 7) the message goes out from the business number and its delivery check mark appears on the card. With texting OFF the button still opens your own phone's Messages app with the text prefilled (works today).
 
+Keep texts to plain (GSM-7) punctuation: one em dash or curly quote switches the whole SMS to UCS-2 (70 characters per segment instead of 160), so a job offer that fits in 2 segments becomes 3–4. The driver offer therefore reads "JOB #12 - Today 3:40 PM" and "Account - no cash" in texts (plain hyphen), even though the console and driver page show the em dash. If you edit a template under Settings → Messages, type a hyphen, not a dash.
+
 ---
 
 ## 5. Square (cards, pay links, invoices)
@@ -188,7 +190,7 @@ Turn these on **one at a time**, in this order, and use the console for a day be
 4. **Square** card → **Square connected: ON** (`settings.squareConnected`) after step 5 sandbox tests pass; switch `SQUARE_ENV` to `production` first.
 5. **Drivers** tab → **Connect phone** next to each driver (or the driver texts **JOIN** to the business number). Watch the green phone icon and the live pin.
 6. **Automation** toggles (auto-assign cascade, auto-arrived, auto-charge, auto airport fee) — each has an Undo and a "why" line; leave them off for the first week.
-7. **Simple mode** is already **ON for every station** (owner decision 11; `settings.simpleMode = true` on first run) — nothing to switch. The owner sets a 4-digit **admin PIN** (Settings → Admin PIN) on their station; from then on **Expert mode** asks for that PIN, so dispatchers stay in Simple mode and the owner unlocks Expert when needed (owner decision 6).
+7. **Simple mode** is already **ON for every station** (owner decision 11; `settings.simpleMode = true` on first run) — nothing to switch. Set the 4-digit **admin PIN** (Settings → Admin PIN) **on every station**, or set it once after Cloud sync is on (settings, PIN included, sync to all stations — the PIN lives in settings, which are per browser). Once set, opening **Settings** or **Expert mode** on that station asks for the PIN once per session, so dispatchers stay in Simple mode and the owner unlocks Expert when needed (owner decision 6). Dispatchers only meet the PIN when they open Settings (e.g. to print the cheat sheet); Today/Book/Board/Drivers/Money never ask for it.
 
 ---
 

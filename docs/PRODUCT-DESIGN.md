@@ -136,7 +136,7 @@ The 17 tabs become **five big buttons** across the top, with **Today** as the ho
 ### Builder notes
 
 - The shell is a new file `simple.js` + `simple.css` loaded after `sync.js`. It **does not move DOM**: it re-parents the existing tab panels into section containers at load (`appendChild` of the existing `#tab-dispatch`, `#tab-trips`… elements) and hides the old tab bar. All existing event handlers, IDs and pop-out code keep working because the elements are the same nodes. Expert mode reverses the re-parenting.
-- `settings.simpleMode` (default `true` after Phase 5), `settings.expertMode`, `settings.adminPin` (bcrypt hash, stored in settings body; never required for Today/Book/Board/Drivers/Money).
+- `settings.simpleMode` (default `true` from Phase A — owner decision 11), `settings.expertMode`, `settings.adminPin` (4-digit PIN stored in the settings body, so it is per browser unless Cloud sync carries settings to every station; asked for once per session when opening Settings or Expert mode; never required for Today/Book/Board/Drivers/Money).
 - "Needs you" strip reads a derived list computed in `sync.js`: offers expired with no next driver, `payment.status==='failed'`, inbound message with `CANCEL`/`C`, driver `curLoc.source==='gps'` and `when` older than 2 min while on a job, flight delay > 15 min awaiting passenger reply, Square/Twilio webhook failure.
 - Undo: `sync.js` wraps mutating actions in `withUndo(label, apply, revert)`; the toast calls `revert()` within 10 s; after that the row is synced. Texts are **not sent** until the undo window closes (so "Undo" on Assign really stops the job text).
 

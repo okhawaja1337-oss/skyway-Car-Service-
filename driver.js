@@ -16,7 +16,9 @@
    consent sentence (CONSENT_TEXT). Consent is kept on the phone
    (skyway_drv_consent = ISO time) and travels with the first payload the
    page sends — the connect completion POST and the "L" location text — so
-   the cloud can set drivers.body.consentAt.
+   the cloud can set drivers.body.consentAt. Going Off shift stops GPS at
+   once; the Location card then offers an "OFF #<job>" text so dispatch
+   (driver-link.js ingestShiftText / sms-in) can mark the driver Off shift too.
 
    Public API: window.Driver (see bottom).
    ====================================================================== */
@@ -110,9 +112,12 @@
     return m ? (m[1] + m[2]).toUpperCase() : '';
   }
   /* Owner decision 6 (default): drivers see the fare on the job card; Account rides show "Account — no cash"
-     (same wording as the console's {fareOrAccount} in messages.js and the server's offer-job template). */
+     (same wording as the console's {fareOrAccount} in messages.js and the server's offer-job template).
+     The PAY TYPE governs: an account customer's ride switched to Cash / Credit Card still shows the fare so the
+     driver collects it; the account name (j.acct) is only the fallback when the payload carries no pay type. */
   function fareLine(j) {
-    if (String(j.pay || '').toLowerCase() === 'account' || j.acct) return { txt: 'Account — no cash', acct: true };
+    var pay = String(j.pay || '').trim();
+    if (/account/i.test(pay) || (!pay && j.acct)) return { txt: 'Account — no cash', acct: true };
     if (j.fare != null && j.fare !== '' && Number(j.fare) > 0) return { txt: money(j.fare, true) + ' + tolls', acct: false };
     return { txt: 'Fare: ask dispatch', acct: false };
   }
@@ -276,6 +281,9 @@
     return b;
   }
   function gpsLocHref() { return gps.last ? smsHref(bizPhone(), locText()) : '#'; }
+  /* "OFF #<job>" — the phone's own switch only stops GPS; this text lets dispatch mark the driver Off shift too
+     (driver-link.js ingestShiftText / sms-in). Offered, never sent automatically. */
+  function shiftText(on) { return (on ? 'ON' : 'OFF') + (JOB && JOB.no ? ' #' + JOB.no : ''); }
   function renderGpsAge() { var a = $('gpsAge'); if (a) a.textContent = gpsAgeTxt(); }
   function renderGps() {
     var host = $('gpsBody');
@@ -283,7 +291,9 @@
       var h = '';
       if (!onShift()) {
         h += '<div class="muted small">You are <b>Off shift</b> — this phone is not sharing its location.</div>';
-        h += '<div class="stack" style="margin-top:10px"><button class="btn navy" type="button" id="btnShareLoc" data-act="shifton"><span class="ico">📍</span> Go On shift &amp; share location</button></div>';
+        h += '<div class="stack" style="margin-top:10px"><button class="btn navy" type="button" id="btnShareLoc" data-act="shifton"><span class="ico">📍</span> Go On shift &amp; share location</button>';
+        if (bizPhone() && (SHIFT && SHIFT.at)) h += '<a class="btn ghost sm" id="btnTellOff" data-act="telloff" href="' + esc(smsHref(bizPhone(), shiftText(false))) + '">📨 Tell dispatch you are Off shift</a>';
+        h += '</div>';
       } else if (!consentAt()) {
         h += consentHtml('gps');
       } else {
@@ -332,10 +342,16 @@
       device: { platform: String(navigator.platform || ''), ua: String(navigator.userAgent || '').slice(0, 300), standalone: standalone, version: 'driver.html' }
     };
     fetch(fn + '/connect-invite', { method: 'POST', headers: headers, body: JSON.stringify(payload) })
-      .then(function (r) { return r.json().then(function (j) { return { ok: !!(r.ok && j && j.ok), j: j || {} }; }, function () { return { ok: false, j: { error: 'Unexpected reply (' + r.status + ')' } }; }); })
+      .then(function (r) { return r.json().then(function (j) { return { ok: !!(r.ok && j && j.ok), status: r.status, j: j || {} }; }, function () { return { ok: false, status: r.status, j: { error: 'Unexpected reply (' + r.status + ')' } }; }); })
       .then(function (res) {
         CONNECT.busy = false;
-        if (!res.ok) { CONNECT.err = String((res.j && res.j.error) || 'Could not connect — ask dispatch for a new link.'); render(); return; }
+        if (!res.ok) {
+          // 401 = the Supabase gateway's JWT check, not our function: connect-invite must be deployed with
+          // --no-verify-jwt (the single-use token is the credential) or the page needs the anon key meta.
+          if ((res.status === 401 || res.status === 403) && !anonKey()) CONNECT.err = 'The dispatch server refused this page (' + res.status + '). Your consent is saved on this phone — text JOIN to dispatch for now. (Developer: deploy connect-invite with --no-verify-jwt, or fill <meta name="skyway-anon-key"> in driver.html; see docs/SETUP.md.)';
+          else CONNECT.err = String((res.j && res.j.error) || 'Could not connect — ask dispatch for a new link.');
+          render(); return;
+        }
         var j = res.j, d = j.driver || {};
         ls(LS_CONNECT, { token: TOKEN, ok: true, at: new Date().toISOString(), driverId: d.id || '', name: d.name || '', car: d.carNo || '', consentAt: j.consentAt || at });
         if (j.biz && (j.biz.name || j.biz.phone)) ls(LS_BIZ, { name: j.biz.name || '', phone: j.biz.phone || '' });
@@ -553,6 +569,7 @@
       }
       else if (act === 'connect') { completeConnect(); }
       else if (act === 'sendloc') { if (!gps.last) { ev.preventDefault(); toast('No GPS fix yet.', true); return; } toast('Opening Messages — send your location to dispatch.'); }
+      else if (act === 'telloff') { toast('Opening Messages — send "' + shiftText(false) + '" so dispatch marks you Off shift.'); }
       else if (act === 'summary') { ST.summarySent = new Date().toISOString(); saveState(); toast('Opening Messages — press send.'); }
       else if (act === 'clear') { clearJob(); }
       else if (act === 'resume') { var last = ls(LS_LAST); if (last && last.raw) { location.hash = '#j=' + last.raw; } }
@@ -626,7 +643,8 @@
     codeHref: codeHref, summaryBody: summaryBody, locText: locText,
     gps: { start: gpsStart, stop: gpsStop, last: function () { return gps.last; }, error: function () { return gps.err; }, running: function () { return gps.watch != null; } },
     consent: { text: CONSENT_TEXT, at: consentAt, agree: giveConsent, revoke: function () { ls(LS_CONSENT, null); setShift(false); render(); } },
-    shift: { on: onShift, set: function (on) { return setShift(on, on ? 'On shift.' : 'Off shift.'); } },
+    shift: { on: onShift, set: function (on) { return setShift(on, on ? 'On shift.' : 'Off shift.'); }, text: shiftText },
+    fareLine: fareLine,
     connect: { token: function () { return TOKEN; }, complete: completeConnect, info: connected, functionsUrl: functionsUrl },
     render: render, clear: clearJob, reload: init,
     maps: { google: gmaps, apple: amaps, waze: waze }

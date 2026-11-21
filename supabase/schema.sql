@@ -264,7 +264,7 @@ create table if not exists invoices (
 create table if not exists payments (
   id text primary key,                         -- = Square payment id where one exists
   location_id text not null,
-  trip_id text, invoice_id text, kind text,    -- auth|capture|link|invoice|refund|tip|cash|terminal
+  trip_id text, invoice_id text, kind text,    -- auth|capture|noshow_fee|link|invoice|refund|tip|cash|terminal
   amount bigint, tip bigint, fee bigint, currency text default 'USD', status text, receipt_url text,
   created_at timestamptz default now(), updated_at timestamptz default now(),
   rev bigint default 0, deleted_at timestamptz, body jsonb not null default '{}'::jsonb

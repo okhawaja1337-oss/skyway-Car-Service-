@@ -104,7 +104,10 @@ All 14 owner decisions were settled on the recommended defaults on 2026-11-21;
 carries it. The ones a dispatcher will notice:
 
 - **Simple mode is on for every station.** Expert mode is behind the owner's
-  4-digit admin PIN (Settings → Admin PIN); dispatchers never need it.
+  4-digit admin PIN (Settings → Admin PIN, set on each station or once with
+  Cloud sync on); dispatchers only need it to open Settings (e.g. to print the
+  cheat sheet) — the daily Today/Book/Board/Drivers/Money screens never ask
+  for it.
 - **Say this on every phone booking:** "By booking you agree to receive ride
   updates by text; reply STOP to opt out." It is printed on the cheat sheet
   (Settings → Print cheat sheet) and shown under the Booked text template.
@@ -113,7 +116,8 @@ carries it. The ones a dispatcher will notice:
 - **The no-show fee is a button, never automatic.** MONEY → No-shows →
   **Charge no-show fee** charges the base fare, only when a card is on file.
 - **Drivers see the fare on job offers**, except Account rides, which read
-  "Account — no cash". Card rides hold the estimate + 20 % at booking and
+  "Account — no cash" (texts use a plain hyphen, "Account - no cash", so the
+  SMS stays in GSM-7 and 2 segments). Card rides hold the estimate + 20 % at booking and
   release the difference when the final charge is smaller.
 - Texts come from the existing business number (Twilio Hosted SMS, calls
   untouched); NYC is the only region; flight data (Phase 6) uses AeroDataBox.

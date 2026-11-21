@@ -4,14 +4,22 @@
 //      CreatePayment {autocomplete:false, amount = estimate × holdFactor + tolls, idempotency_key = trip.id+':auth'}
 //      Owner decision 5: hold the estimate + 20 % (settings.holdFactor, default 1.2, clamped 1.0–1.5).
 //      The hold is released automatically when the final charge is smaller — see "capture".
-// POST { action: "capture", location_id, trip_id, tip_cents?: 0, final_cents?: <override> }
+//      WIRING STATUS: the hook is ready but NOTHING CALLS IT YET. No console module, trigger or cron
+//      invokes {action:"authorize"} when a card ride is saved (nor "capture" on Completed); today it is
+//      only reachable by a manual POST. The booking flow (index.html / sync.js) owns that call —
+//      Cloud.fn('square-charge', {action:'authorize', location_id, trip_id}) on save of a Credit Card
+//      trip with a card on file, and 'capture' on Completed. Until then: holds are NOT live in the pilot.
+// POST { action: "capture", location_id, trip_id, tip_cents?: 0, final_cents?: <override>, kind?: "noshow_fee" }
 //      final = fare + tolls + waitFee + stopFee×stops + ccu (accounts) + autoGratuity%
 //      Owner decision 4: autoGratuity% is 0 unless an account asked for it —
 //      accounts.body.autoGratuityPct overrides settings.autoGratuityPct; both default 0.
 //      ≤ hold → UpdatePayment(amount, tip) + CompletePayment; > hold → CancelPayment + CreatePayment{autocomplete:true}
 //      failure → trips.body.payment.status='failed', square-link, Needs-you
-//      No-show fees are NOT charged here automatically: the dispatcher presses "Charge no-show fee" in the
-//      console's Money panel (money.js), which only works when a card is on file.
+//      kind:"noshow_fee" (owner decision 4): sent ONLY by the dispatcher's "Take fee from hold" button in the
+//      console's Money panel (money.js) for a No-Show card trip that already carries a hold. final = the base fare
+//      (or final_cents), tip 0 → the hold is completed for the fee and Square releases the rest; the trip gets
+//      payment.status='noshow-fee' (not 'paid'), payments.kind='noshow_fee', no pay-link text on failure.
+//      No-show fees are never charged by this function on its own (no trigger, no cron).
 // POST { action: "charge", location_id, trip_id, amount_cents, tip_cents?, source_id? }  (no prior hold; pay.html tips)
 // POST { action: "refund", location_id, trip_id, amount_cents, reason }
 // → { ok, payment_id, status, amount_cents, ... }
@@ -30,6 +38,7 @@ interface Body extends Json {
   amount_cents?: number;
   source_id?: string;
   reason?: string;
+  kind?: "noshow_fee";
 }
 
 // Owner decision 5 (accepted default): hold the estimate + 20 % on card rides. `settings.holdFactor`
@@ -119,7 +128,7 @@ serve(async (req) => {
 
   if (body.action === "authorize") {
     if (t.payType !== "Credit Card") return json({ ok: false, reason: "not a card trip" });
-    if (payment.status === "authorized" || payment.status === "paid") return json({ ok: true, reason: `already ${payment.status}`, payment_id: payment.paymentId });
+    if (payment.status === "authorized" || payment.status === "paid" || payment.status === "noshow-fee") return json({ ok: true, reason: `already ${payment.status}`, payment_id: payment.paymentId });
     const card = body.source_id ? { sourceId: body.source_id, customerId: String(payment.customerId || "") } : await cardFor(loc.id, t);
     if (!card) {
       await raiseNeedsYou({ location_id: loc.id, kind: "no_card", trip_id: trip.id, note: `#${ref}: card ride but no card on file — add a card or send a pay link.` });
@@ -143,16 +152,24 @@ serve(async (req) => {
   }
 
   if (body.action === "capture") {
+    // Owner decision 4: the no-show fee is dispatcher-only. This flag arrives from the console button, never from a trigger.
+    const noShow = body.kind === "noshow_fee";
+    if (noShow && t.status !== "No-Show") return json({ error: "kind noshow_fee is only for No-Show trips" }, 400);
+    if (noShow && t.payType !== "Credit Card") return json({ error: "kind noshow_fee is only for card trips" }, 400);
     const settings = await loadSettings(loc.id);
     const rate = (settings.rate as Json) || {};
-    const account = await loadAccount(t);
-    const finalC = body.final_cents != null ? Math.round(Number(body.final_cents)) : finalCents(t, settings, rate, account);
-    const tipC = Math.max(0, Math.round(Number(body.tip_cents) || cents(t.tip)));
-    if (payment.status === "paid") return json({ ok: true, reason: "already paid", payment_id: payment.paymentId });
+    const account = noShow ? null : await loadAccount(t);
+    const finalC = body.final_cents != null ? Math.round(Number(body.final_cents)) : noShow ? cents(t.fare) : finalCents(t, settings, rate, account);
+    const tipC = noShow ? 0 : Math.max(0, Math.round(Number(body.tip_cents) || cents(t.tip)));
+    if (payment.status === "paid" || payment.status === "noshow-fee") return json({ ok: true, reason: `already ${payment.status}`, payment_id: payment.paymentId });
+    if (noShow && finalC <= 0) return json({ error: "no-show fee is zero (no base fare)" }, 400);
     const holdC = Number(payment.holdCents) || 0;
+    // The console marks a no-show fee 'noshow-pending' (priorStatus 'authorized') before this call and sync may
+    // push that first — the hold is still open in Square, so treat it exactly like 'authorized' here.
+    const held = !!payment.paymentId && (payment.status === "authorized" || (payment.status === "noshow-pending" && payment.priorStatus === "authorized"));
     try {
       let p: Json;
-      if (payment.status === "authorized" && payment.paymentId && finalC + tipC <= holdC) {
+      if (held && finalC + tipC <= holdC) {
         // Hold release (owner decision 5): the authorization was for estimate × holdFactor + tolls. We first
         // UpdatePayment to the smaller final amount (+ tip) and then CompletePayment — Square captures only that
         // amount and releases the remainder of the hold back to the passenger's card automatically (a partial
@@ -161,19 +178,29 @@ serve(async (req) => {
         p = (await completePayment(String(payment.paymentId))).payment;
       } else {
         // Final > hold (or no hold): void the authorization — which releases it in full — and charge the card again.
-        if (payment.status === "authorized" && payment.paymentId) await cancelPayment(String(payment.paymentId)).catch(() => undefined);
+        if (held) await cancelPayment(String(payment.paymentId)).catch(() => undefined);
         const card = body.source_id ? { sourceId: body.source_id, customerId: String(payment.customerId || "") } : await cardFor(loc.id, t);
         if (!card) throw new Error("no card on file");
         p = (await createPayment({ idempotencyKey: `${trip.id}:capture:${finalC}:${tipC}`, amount: money(finalC, currency), tip: tipC ? money(tipC, currency) : undefined, sourceId: card.sourceId, customerId: card.customerId || undefined, locationId: sqLoc, autocomplete: true, referenceId: ref, note: route })).payment;
       }
-      const next = { ...payment, status: "paid", paymentId: p.id, amountCents: finalC, tipCents: tipC, currency, paidAt: new Date().toISOString(), receiptUrl: p.receipt_url || null };
-      await patchTripBody(trip.id, { payment: next, tip: tipC / 100 });
-      await recordPayment({ id: p.id, location_id: loc.id, trip_id: trip.id, kind: "capture", amount: finalC, tip: tipC, currency, status: String(p.status), receipt_url: p.receipt_url || null, body: p });
-      await audit(loc.id, "square_captured", { trip_id: trip.id, body: { finalC, tipC } });
-      return json({ ok: true, payment_id: p.id, status: p.status, amount_cents: finalC, tip_cents: tipC, receipt_url: p.receipt_url || null });
+      const now = new Date().toISOString();
+      // The no-show fee keeps its own status so the console's Money panel shows "fee $X" (money.js chip) and
+      // the fee is never mistaken for a completed ride's payment; the hold's paymentId stays on the record.
+      const next = noShow
+        ? { ...payment, status: "noshow-fee", paymentId: p.id, amount: finalC / 100, amountCents: finalC, tipCents: 0, currency, at: now, paidAt: now, method: "card", cardOnFile: true, via: "cloud", receiptUrl: p.receipt_url || null }
+        : { ...payment, status: "paid", paymentId: p.id, amountCents: finalC, tipCents: tipC, currency, paidAt: now, receiptUrl: p.receipt_url || null };
+      await patchTripBody(trip.id, noShow ? { payment: next } : { payment: next, tip: tipC / 100 });
+      await recordPayment({ id: p.id, location_id: loc.id, trip_id: trip.id, kind: noShow ? "noshow_fee" : "capture", amount: finalC, tip: tipC, currency, status: String(p.status), receipt_url: p.receipt_url || null, body: p });
+      await audit(loc.id, noShow ? "square_noshow_fee" : "square_captured", { trip_id: trip.id, actor: noShow ? "dispatcher" : undefined, body: { finalC, tipC, holdC } });
+      return json({ ok: true, payment_id: p.id, status: p.status, amount_cents: finalC, tip_cents: tipC, receipt_url: p.receipt_url || null, kind: noShow ? "noshow_fee" : "capture" });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       await patchTripBody(trip.id, { payment: { ...payment, status: "failed", error: msg, failedAt: new Date().toISOString(), amountCents: finalC } });
+      if (noShow) {
+        // A failed no-show fee is a dispatcher matter — no pay-link text to a passenger who never showed.
+        await raiseNeedsYou({ location_id: loc.id, kind: "noshow_fee_failed", trip_id: trip.id, note: `#${ref}: no-show fee of ${(finalC / 100).toFixed(2)} could not be taken from the hold (${msg}).` });
+        return json({ ok: false, reason: msg }, 402);
+      }
       await raiseNeedsYou({ location_id: loc.id, kind: "charge_failed", trip_id: trip.id, note: `#${ref}: charge of ${(finalC / 100).toFixed(2)} failed (${msg}) — pay link sent automatically.` });
       await fetch(`${functionsBaseUrl()}/square-link`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` }, body: JSON.stringify({ location_id: loc.id, trip_id: trip.id, amount_cents: finalC, send_text: true }) }).catch(() => undefined);
       return json({ ok: false, reason: msg }, 402);

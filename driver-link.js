@@ -79,6 +79,15 @@
   function fmtMoney(n) { n = Number(n) || 0; return Math.abs(n - Math.round(n)) < 0.005 ? '$' + Math.round(n) : '$' + n.toFixed(2); }
   function firstName(n) { return String(n || '').trim().split(/\s+/)[0] || ''; }
 
+  /* Owner decision 6 (default): drivers see the fare; Account rides read "Account — no cash". The PAY TYPE governs:
+     an account customer's ride that dispatch switched to Cash / Credit Card (the edit-order Payment select allows it,
+     and Earnings / cash_collected are pay-type based) must still read as a cash fare, so the account is only the
+     fallback when the pay type is blank. Same rule as driver.js fareLine() and offer-job. */
+  function isAccountRide(t) {
+    var pay = String((t && t.payType) || '').trim();
+    return /account/i.test(pay) || (!pay && !!(t && t.accountId));
+  }
+
   /* ---------- the job payload + URL ---------- */
   function jobPayload(trip) {
     var t = findTrip(trip); if (!t) return null;
@@ -113,7 +122,7 @@
   function builtinJobText(t) {
     var s = STATE.settings || {}, biz = (s.name || 'Skyway').toUpperCase();
     var when = (t.date ? t.date + ' ' : '') + time12(t.time);
-    var acct = t.accountId || /account/i.test(t.payType || '');
+    var acct = isAccountRide(t);
     var stops = (t.stops || []).filter(Boolean);
     return biz + ' JOB #' + t.dispatchNo + ' — ' + when + '. PU: ' + (t.puAddr || '?') + '. DO: ' + (t.doAddr || '?') + '.' +
       (stops.length ? ' ' + stops.length + ' stop' + (stops.length > 1 ? 's' : '') + '.' : '') +
@@ -174,6 +183,20 @@
     try { if (typeof window.renderDriverStatus === 'function') window.renderDriverStatus(); } catch (e) {}
     try { if (typeof window.renderOptimizer === 'function' && byId('view-optimizer') && byId('view-optimizer').classList.contains('active')) window.renderOptimizer(); } catch (e) {}
   }
+  /* index.html's driverLastLocation() only reads curLoc.addr: it is a "zone" via diqZoneKey()/shortAddr() (which cut at
+     the first comma) and coordinates via coordsForAddr() = STATE.geocache[normalizeAddr(addr)]. So a GPS pin is stored
+     under a comma-free, self-describing addr ("GPS 40.71234 -73.98765") and its point is seeded into the geocache under
+     that key — then Driver IQ ranks the driver by real distance ("~1.2 mi away") instead of "Last seen 40.71234". */
+  function gpsAddr(lat, lng) { return 'GPS ' + Number(lat).toFixed(5) + ' ' + Number(lng).toFixed(5); }
+  function isGpsAddr(a) { return /^GPS -?\d{1,3}\.\d+ -?\d{1,3}\.\d+$/.test(String(a || '')); }
+  function geoKey(addr) { try { return typeof window.normalizeAddr === 'function' ? window.normalizeAddr(addr) : String(addr || '').toUpperCase(); } catch (e) { return String(addr || '').toUpperCase(); } }
+  function seedGeocache(addr, lat, lng, prevAddr) {
+    try {
+      if (!STATE.geocache || typeof STATE.geocache !== 'object') STATE.geocache = {};
+      if (prevAddr && prevAddr !== addr && isGpsAddr(prevAddr)) delete STATE.geocache[geoKey(prevAddr)];   // one entry per driver, not one per fix
+      STATE.geocache[geoKey(addr)] = { lat: lat, lng: lng };
+    } catch (e) {}
+  }
   function ingestLocation(driverId, p) {
     var d = findDriver(driverId); if (!d || !p || typeof p !== 'object') return null;
     var lat = Number(p.lat), lng = Number(p.lng);
@@ -187,13 +210,15 @@
     if (cur.when && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(String(cur.when)) && String(cur.when) > when) { doSave(); repaintDrivers(); return d; }
     var near = cur.lat != null && cur.lng != null && Math.abs(Number(cur.lat) - lat) < 0.00045 && Math.abs(Number(cur.lng) - lng) < 0.0006;
     var acc = p.accuracy != null ? p.accuracy : p.acc;
+    var addr = (near && cur.addr) || String(p.addr || '') || gpsAddr(lat, lng);
     d.curLoc = {
-      addr: (near && cur.addr) || String(p.addr || '') || (lat.toFixed(5) + ', ' + lng.toFixed(5)),
+      addr: addr,
       when: when, lat: lat, lng: lng, source: 'gps',
       heading: p.heading != null && isFinite(Number(p.heading)) ? Number(p.heading) : null,
       speed: p.speed != null && isFinite(Number(p.speed)) ? Number(p.speed) : null,
       accuracy: acc != null && isFinite(Number(acc)) ? Number(acc) : null
     };
+    seedGeocache(addr, lat, lng, cur.source === 'gps' ? cur.addr : '');
     doSave(); repaintDrivers();
     return d;
   }
@@ -209,7 +234,14 @@
     var p = parseLocationText(txt); if (!p) return null;
     return ingestLocation(driverId, { lat: p.lat, lng: p.lng, consentAt: p.consentAt });
   }
-  /* Console marks a driver On/Off shift (no UI here — index.html's Driver status row is not rendered by this file). */
+  /* "OFF #12" / "ON" texted from the phone (driver.js offers the OFF text when the driver flips Off shift) → {on} */
+  function parseShiftText(txt) {
+    var m = String(txt || '').match(/^\s*(ON|OFF)\b(?:\s*SHIFT)?\b/i);
+    return m ? { on: m[1].toUpperCase() === 'ON' } : null;
+  }
+  function ingestShiftText(driverId, txt) { var p = parseShiftText(txt); return p ? setShift(driverId, p.on) : false; }
+  /* Console marks a driver On/Off shift: the "Off shift" button in Driver IQ → Driver status (added by the
+     renderDriverStatus wrap below), a pasted "OFF" text, or sync.js. The phone's own switch only gates GPS sending. */
   function setShift(driverId, on) {
     var d = findDriver(driverId); if (!d) return false;
     on = !!on;
@@ -218,6 +250,55 @@
     doSave(); repaintDrivers();
     say((d.name || 'Driver') + (on ? ' is On shift.' : ' is Off shift — phone tracking paused; the last pin stays on the board.'));
     return true;
+  }
+
+  /* ---------- Driver IQ → "Driver status & location": GPS badge + Off shift button ----------
+     index.html's renderDriverStatus() treats any curLoc.addr as a manual "(set)" pin. After it paints, decorate the
+     rows whose pin came from the phone: "(set)" → "GPS · On shift ±12 m", the coordinate text becomes a map link, and an
+     "Off shift" button (DriverLink.setShift) appears while the driver is On shift. */
+  function decorateDriverStatus() {
+    var host = byId('diq_status'); if (!host) return;
+    (STATE.drivers || []).forEach(function (d) {
+      var inp = byId('setloc_' + d.id); if (!inp) return;
+      var tr = inp.closest ? inp.closest('tr') : null; if (!tr || !tr.cells || tr.cells.length < 5) return;
+      var gps = !!(d.curLoc && d.curLoc.source === 'gps' && d.curLoc.lat != null && d.curLoc.lng != null);
+      var on = d.onShift === true;
+      if (gps) {
+        var cell = tr.cells[2], lat = Number(d.curLoc.lat), lng = Number(d.curLoc.lng);
+        if (isGpsAddr(d.curLoc.addr) && cell.firstChild && cell.firstChild.nodeType === 3) {
+          var a = document.createElement('a'); a.href = 'https://maps.google.com/?q=' + lat.toFixed(5) + ',' + lng.toFixed(5); a.target = '_blank'; a.rel = 'noopener';
+          a.textContent = '📍 ' + lat.toFixed(5) + ', ' + lng.toFixed(5); a.title = 'Open the pin in Google Maps';
+          cell.replaceChild(a, cell.firstChild);
+        }
+        var badge = document.createElement('span'); badge.className = 'hint dl-gps'; badge.style.cssText = 'margin:0;color:' + (on ? '#1f7a3d' : '#777') + ';font-weight:600;';
+        badge.textContent = ' GPS · ' + (on ? 'On shift' : 'Off shift') + (d.curLoc.accuracy != null ? ' ±' + Math.round(Number(d.curLoc.accuracy)) + ' m' : '');
+        badge.title = 'Live pin from the driver’s phone (' + (d.curLoc.when || '') + ')' + (d.consentAt ? ' · consent recorded ' + String(d.consentAt).slice(0, 10) : ' · no consent stamp received yet');
+        var hint = cell.querySelector('.hint');
+        if (hint) cell.replaceChild(badge, hint); else cell.appendChild(badge);
+      }
+      if (on) {
+        var acts = tr.cells[4];
+        var b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-ghost btn-sm dl-shift';
+        b.textContent = 'Off shift'; b.title = 'Mark ' + (d.name || 'this driver') + ' Off shift — the phone stops being treated as live; the last pin stays on the board';
+        b.setAttribute('onclick', "DriverLink.setShift('" + d.id + "',false)");
+        acts.appendChild(document.createTextNode(' ')); acts.appendChild(b);
+      }
+    });
+    if (!host.querySelector('.dl-gps-note') && (STATE.drivers || []).some(function (d) { return d.curLoc && d.curLoc.source === 'gps'; })) {
+      var note = document.createElement('div'); note.className = 'hint dl-gps-note'; note.style.marginTop = '4px';
+      note.textContent = 'GPS pins come from the driver’s phone only while they are On shift and only after they agreed to the consent text; raw points are kept 30 days.';
+      host.appendChild(note);
+    }
+  }
+  if (typeof window.renderDriverStatus === 'function' && !window.renderDriverStatus._dlWrapped) {
+    var _origRDS = window.renderDriverStatus;
+    var wrappedRDS = function () {
+      var r = _origRDS.apply(this, arguments);
+      try { decorateDriverStatus(); } catch (e) {}
+      return r;
+    };
+    wrappedRDS._dlWrapped = true; wrappedRDS._orig = _origRDS;
+    window.renderDriverStatus = wrappedRDS;
   }
 
   /* ---------- board integration: "📲 Send job" in the actions cell ---------- */
@@ -247,7 +328,7 @@
   function ensureStyle() {
     if (byId('dlStyle')) return;
     var st = document.createElement('style'); st.id = 'dlStyle';
-    st.textContent = '.dl-btn{white-space:nowrap;}';
+    st.textContent = '.dl-btn{white-space:nowrap;}.dl-shift{margin-left:2px;}.dl-gps{white-space:nowrap;}';
     document.head.appendChild(st);
   }
 
@@ -259,7 +340,8 @@
     smsHref: smsHref, encode: function (o) { return b64uEncode(JSON.stringify(o)); },
     // owner decision 7
     CONSENT_TEXT: CONSENT_TEXT, ingestLocation: ingestLocation, ingestLocationText: ingestLocationText,
-    parseLocationText: parseLocationText, setShift: setShift
+    parseLocationText: parseLocationText, setShift: setShift, parseShiftText: parseShiftText, ingestShiftText: ingestShiftText,
+    gpsAddr: gpsAddr, isGpsAddr: isGpsAddr, isAccountRide: isAccountRide
   };
 
   function boot() {

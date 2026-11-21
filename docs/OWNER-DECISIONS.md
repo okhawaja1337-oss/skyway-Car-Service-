@@ -47,14 +47,14 @@ Where to find the technical hook for each decision is noted in *italics*; the **
   **Recommended default:** the owner holds the admin PIN and Expert mode; every other station is a dispatcher; drivers **do** see the fare on job offers (it lowers declines) except on Account rides, which show "Account – no cash".
   *Hook: `settings.adminPin`; user roles in Supabase Auth app_metadata; `offer-job` template `driverJob`.*
   Your answer: Recommended default — accepted 2026-11-21. Owner holds the admin PIN + Expert mode; every other station is a dispatcher; drivers see the fare on offers, Account rides show "Account — no cash".
-  Wired: `simple.js` (`settings.adminPin`, Settings → Admin PIN) + the `driverJob` template's `{fareOrAccount}` variable in `messages.js` (console texts), `supabase/functions/_shared/templates.ts` / `offer-job` (server offers) and `driver.js` (payment line on the driver page).
+  Wired: `simple.js` (`settings.adminPin`, Settings → Admin PIN) + the `driverJob` template's `{fareOrAccount}` variable in `messages.js` (console texts), `supabase/functions/_shared/templates.ts` / `offer-job` (server offers) and `driver.js` (payment line on the driver page). Note on punctuation: on screen (driver page, docs) the phrase is "Account — no cash"; in **texts** it must go out with a plain hyphen — "Account - no cash", and "JOB #12 - Today 3:40 PM" — because one em dash switches the whole SMS to UCS-2 (70 chars/segment) and turns a 2-segment offer into 3–4 segments.
 
 - [x] **7. Driver tracking policy.**
   On-shift-only tracking (recommended) with 30-day raw retention, then daily summaries. Please supply or approve the written consent text drivers see when they connect a phone.
   **Recommended default:** agree; consent text: "Skyway tracks this phone's location only while you are On shift, to dispatch jobs and show passengers their ETA. Raw location data is kept 30 days."
   *Hook: `drivers.body.consentAt`, `roll_driver_locations()` in `schema.sql` (pg_cron).*
   Your answer: Recommended default — accepted 2026-11-21. On-shift-only tracking; 30-day raw retention then daily summaries; consent text exactly as above.
-  Wired: `driver.html` / `driver.js` (consent text shown when a phone connects, **On shift** toggle; records `drivers.body.consentAt` and `drivers.body.onShift`) + `supabase/schema.sql` (`roll_driver_locations()` keeps 30 days of raw points, then daily totals; scheduled in `docs/SETUP.md` §3.7).
+  Wired: `driver.js` shows the consent text and the **On shift** toggle (the toggle itself is kept on the phone, `localStorage` `skyway_drv_shift`, and only gates whether the phone sends GPS pins); `supabase/functions/connect-invite` stores `drivers.body.consentAt` / `consentText` when the phone connects; the **console** sets `drivers.body.onShift` — `driver-link.js` `ingestLocation()` flips it on when a GPS pin arrives and `setShift()` turns it off — and the schema trigger mirrors it to `drivers.on_shift`; + `supabase/schema.sql` (`roll_driver_locations()` keeps 30 days of raw points, then daily totals; scheduled in `docs/SETUP.md` §3.7).
 
 - [x] **8. Passenger consent wording** for phone bookings.
   Dispatchers must say it, or it must be on the website/widget: "By booking you agree to receive ride updates by text; reply STOP to opt out."
@@ -81,7 +81,7 @@ Where to find the technical hook for each decision is noted in *italics*; the **
   **Recommended default:** Simple mode for all stations; the owner unlocks Expert mode with the PIN when needed.
   *Hook: `settings.simpleMode`, `settings.expertMode`.*
   Your answer: Recommended default — accepted 2026-11-21. Simple mode for all stations; the owner unlocks Expert mode with the admin PIN.
-  Wired: `simple.js` (`settings.simpleMode` seeded `true` on first run; Settings → Expert mode asks for `settings.adminPin` when one is set).
+  Wired: `simple.js` (`settings.simpleMode` seeded `true` on first run; `settings.adminPin` is a 4-digit PIN stored in the settings body). The PIN lives in settings, which are **per browser**: set it on every station, or set it once after Cloud sync is on (`sync.js` syncs settings, PIN included, to all stations). Once set, opening **Settings** or **Expert mode** on that station asks for the PIN once per session, so dispatchers stay in Simple mode; they only need it to open Settings (e.g. to print the cheat sheet) — the daily Today/Book/Board/Drivers/Money screens never ask for it.
 
 - [x] **12. Flight data provider.**
   AeroDataBox (cheaper, ~$10–30/mo) vs FlightAware AeroAPI (more accurate, ~$20–50/mo).

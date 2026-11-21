@@ -5,23 +5,45 @@
 //    → creates connect_tokens (token, driver_id, expires_at = +24 h, used=false)
 //    → texts the driver from the business number:
 //        SKYWAY: Tap to connect your phone to dispatch: https://go.<domain>/d/<token> (link good for 24h)
-//        By connecting you agree: Skyway tracks this phone only while On shift; location kept 30 days.
+//        Skyway tracks this phone's location only while you are On shift, to dispatch jobs and show passengers
+//        their ETA. Raw location data is kept 30 days.
+//      (the exact owner-approved sentence, {consentLine}; 247 GSM-7 chars = 2 segments. The driver AGREES on the
+//      page, not by tapping the link — the text only states the policy.)
 //    → { ok, token, url, expires_at, message_id }
 //    Also called internally by sms-in for the JOIN keyword (same body + { via: "join" }).
 //
-// 2. Complete (action "complete") — from driver.html?t=<token>, no login (the token is the credential;
-//    deploy with --no-verify-jwt or put the anon key in driver.html's <meta name="skyway-anon-key">):
-//    POST { action: "complete", token, consentAt?: ISO, consentText?, device?: {platform, ua, standalone, version} }
-//    → marks the token used, stores drivers.body.consentAt (owner decision 7) + connectedAt, opens a
-//      device_sessions row, audits "phone_connected"
+// 2. Complete (action "complete") — from driver.html?t=<token>, no login (the single-use 24 h token is the
+//    credential: deploy with `supabase functions deploy connect-invite --no-verify-jwt`, or fill driver.html's
+//    <meta name="skyway-anon-key"> so the page can pass the gateway's JWT check — otherwise the POST gets a 401):
+//    POST { action: "complete", token, consentAt: ISO, consentText, device?: {platform, ua, standalone, version} }
+//    → consentText must equal CONSENT_TEXT (whitespace-normalized) or the call is refused with 400 — consent is
+//      only ever recorded under the approved wording; consentAt is the client's stamp when it is plausible
+//      (not in the future, at most 48 h old), else the server time
+//    → marks the token used, stores drivers.body.consentAt + consentText (owner decision 7) + connectedAt,
+//      opens a device_sessions row, audits "phone_connected"
 //    → { ok, location_id, driver: {id, name, carNo}, biz: {name, phone}, consentAt }
 import { admin, audit, functionsBaseUrl, getDriver, getLocation, insertMessage, issueConnectToken, json, Json, nowMs, readJson, requireStr, serve, toE164 } from "../_shared/db.ts";
 import { sendSms } from "../_shared/twilio.ts";
 import { loadTemplates, render } from "../_shared/templates.ts";
 
-// Owner decision 7 (default): on-shift-only tracking, 30-day raw retention.  Short form for the text;
-// the full sentence the driver agrees to on the phone lives in driver.js (CONSENT_TEXT).
-const CONSENT_LINE = "By connecting you agree: Skyway tracks this phone only while On shift; location kept 30 days.";
+// Owner decision 7 (default): on-shift-only tracking, 30-day raw retention, and THIS exact consent sentence.
+// It must stay byte-identical to driver.js CONSENT_TEXT: the connect text carries it, and action "complete"
+// refuses to record consent given under any other wording. Do not reword or shorten here.
+const CONSENT_TEXT = "Skyway tracks this phone's location only while you are On shift, to dispatch jobs and show passengers their ETA. Raw location data is kept 30 days.";
+const CONSENT_MAX_AGE_MS = 48 * 60 * 60 * 1000;   // a client consentAt older than this is replaced by the server time
+const CLOCK_SKEW_MS = 5 * 60 * 1000;              // ... as is one more than 5 min in the future (phone clock ahead)
+
+function normText(v: unknown): string { return String(v ?? "").replace(/\s+/g, " ").trim(); }
+
+/** The consent stamp to record: the client's when plausible, else `nowIso`; plus what the client sent. */
+function consentStamp(v: unknown, nowIso: string): { consentAt: string; clientConsentAt: string } {
+  const nowT = new Date(nowIso).getTime();
+  const client = typeof v === "string" && v.trim() ? new Date(v) : null;
+  const clientT = client ? client.getTime() : NaN;
+  if (isNaN(clientT)) return { consentAt: nowIso, clientConsentAt: "" };
+  const plausible = clientT <= nowT + CLOCK_SKEW_MS && clientT >= nowT - CONSENT_MAX_AGE_MS;
+  return { consentAt: plausible ? new Date(clientT).toISOString() : nowIso, clientConsentAt: new Date(clientT).toISOString() };
+}
 
 interface Body extends Json {
   action?: "invite" | "complete";
@@ -36,12 +58,6 @@ interface Body extends Json {
 }
 
 interface TokenRow { id: string; location_id: string; driver_id: string | null; expires_at: string; used: boolean | null; body: Json }
-
-function isoOrNow(v: unknown, fallback: string): string {
-  if (typeof v !== "string" || !v.trim()) return fallback;
-  const d = new Date(v);
-  return isNaN(d.getTime()) ? fallback : d.toISOString();
-}
 
 async function settingsFor(locId: string): Promise<Json> {
   const { data } = await admin().from("settings").select("body").eq("id", locId).maybeSingle();
@@ -60,9 +76,9 @@ async function invite(body: Body): Promise<Response> {
   const settings = await settingsFor(loc.id);
   const templates = await loadTemplates(loc.id);
   const bizName = String(settings.name || loc.name || "Skyway");
-  let textBody = render(templates.driverConnect, { biz: bizName, bizShort: bizName.split(" ")[0].toUpperCase(), connectUrl: t.url, consentLine: CONSENT_LINE });
-  // the connect text always carries the consent line, even when a location's template override left {consentLine} out
-  if (!/on shift/i.test(textBody)) textBody = `${textBody} ${CONSENT_LINE}`;
+  let textBody = render(templates.driverConnect, { biz: bizName, bizShort: bizName.split(" ")[0].toUpperCase(), connectUrl: t.url, consentLine: CONSENT_TEXT });
+  // the connect text always states the policy in the approved words, even when a location's template override left {consentLine} out
+  if (!textBody.includes(CONSENT_TEXT)) textBody = `${textBody} ${CONSENT_TEXT}`;
 
   const sms = await sendSms({ to, body: textBody, messagingServiceSid: loc.twilio_messaging_sid || undefined, statusCallback: `${functionsBaseUrl()}/sms-status` });
   const message_id = await insertMessage({
@@ -82,31 +98,40 @@ async function complete(body: Body): Promise<Response> {
   if (row.used) return json({ error: "This connect link was already used. Ask dispatch for a new one." }, 410);
   if (new Date(row.expires_at).getTime() < Date.now()) return json({ error: "This connect link has expired (links last 24 hours). Ask dispatch for a new one." }, 410);
 
+  // owner decision 7: consent is recorded only under the approved sentence. A page showing other wording (an old
+  // cached driver.js, a reworded fork) is refused — the driver has not agreed to what the owner approved.
+  if (normText(body.consentText) !== normText(CONSENT_TEXT)) {
+    return json({ error: "This page shows out-of-date consent wording, so dispatch cannot record your agreement. Reload the page (or reinstall Skyway Driver from the Home Screen) and try again." }, 400);
+  }
+
   const driver = await getDriver(row.driver_id);
   const loc = await getLocation(row.location_id);
   const now = new Date().toISOString();
-  const consentAt = isoOrNow(body.consentAt, now);
+  const stamp = consentStamp(body.consentAt, now);
   const prior = typeof driver.body.consentAt === "string" && driver.body.consentAt ? driver.body.consentAt : "";
+  const consentAt = prior || stamp.consentAt;
   const dev = (body.device && typeof body.device === "object" ? body.device : {}) as Json;
-  const consentText = typeof body.consentText === "string" ? body.consentText.slice(0, 400) : "";
 
-  // owner decision 7: the first consent on record is kept; later connects only refresh connectedAt / device
+  // the first consent on record is kept; later connects only refresh connectedAt / device
   const newBody: Json = {
     ...driver.body,
-    consentAt: prior || consentAt,
-    ...(consentText && !prior ? { consentText } : {}),
+    consentAt,
+    consentText: CONSENT_TEXT,
     connectedAt: now,
     device: { platform: String(dev.platform || "web").slice(0, 60), standalone: dev.standalone === true, version: String(dev.version || "driver.html").slice(0, 40) },
   };
   const { error: dErr } = await db.from("drivers").update({ body: newBody, rev: nowMs() }).eq("id", driver.id);
   if (dErr) return json({ error: dErr.message }, 500);
-  await db.from("connect_tokens").update({ used: true, body: { ...row.body, completed_at: now, consentAt: prior || consentAt }, rev: nowMs() }).eq("id", row.id);
+  await db.from("connect_tokens").update({ used: true, body: { ...row.body, completed_at: now, consentAt }, rev: nowMs() }).eq("id", row.id);
   await db.from("device_sessions").insert({
     location_id: loc.id, driver_id: driver.id, phone_e164: driver.phone_e164,
     platform: String(dev.platform || "web").slice(0, 60), app_version: String(dev.version || "driver.html").slice(0, 40), last_seen: now,
-    body: { ua: String(dev.ua || "").slice(0, 300), token, consentAt: prior || consentAt },
+    body: { ua: String(dev.ua || "").slice(0, 300), token, consentAt },
   });
-  await audit(loc.id, "phone_connected", { driver_id: driver.id, actor: `driver:${driver.id}`, body: { token, consentAt: prior || consentAt, firstConsent: !prior } });
+  await audit(loc.id, "phone_connected", {
+    driver_id: driver.id, actor: `driver:${driver.id}`,
+    body: { token, consentAt, firstConsent: !prior, ...(stamp.clientConsentAt && stamp.clientConsentAt !== stamp.consentAt ? { clientConsentAt: stamp.clientConsentAt } : {}) },
+  });
 
   const settings = await settingsFor(loc.id);
   return json({
@@ -114,7 +139,7 @@ async function complete(body: Body): Promise<Response> {
     location_id: loc.id,
     driver: { id: driver.id, name: String(driver.name || driver.body.name || ""), carNo: String(driver.car_no || driver.body.carNo || "") },
     biz: { name: String(settings.name || loc.name || "Skyway"), phone: String(settings.phone || settings.cphone || loc.body.phone || "") },
-    consentAt: prior || consentAt,
+    consentAt,
   });
 }
 

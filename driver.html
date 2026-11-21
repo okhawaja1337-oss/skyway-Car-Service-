@@ -12,10 +12,13 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Skyway Driver">
 <meta name="format-detection" content="telephone=no">
-<!-- Cloud hooks for the connect link (driver.html?t=<token>): the Edge Functions base URL, e.g.
-     https://<ref>.supabase.co/functions/v1, and (only if connect-invite is deployed WITH JWT checks) the
-     public anon key. Both empty = no-backend mode: consent is still recorded on the phone and rides along
-     in the first "L" location text. See docs/SETUP.md. -->
+<!-- Cloud hooks for the connect link (driver.html?t=<token>), owner decision 7 (consent recorded in the cloud):
+     skyway-functions = the Edge Functions base URL, e.g. https://<ref>.supabase.co/functions/v1.
+     connect-invite must be deployed with `supabase functions deploy connect-invite --no-verify-jwt` (the single-use
+     24 h token is the credential for action "complete"); if it is deployed WITH the JWT check, also fill
+     skyway-anon-key with the project's public anon key, otherwise the POST is answered 401 by the gateway.
+     Both empty = no-backend mode: consent is still recorded on the phone and rides along in the first "L"
+     location text. See docs/SETUP.md. -->
 <meta name="skyway-functions" content="">
 <meta name="skyway-anon-key" content="">
 <link rel="manifest" href="manifest.webmanifest">

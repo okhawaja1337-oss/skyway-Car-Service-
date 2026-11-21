@@ -73,11 +73,22 @@
     if (d.length === 11 && d.charAt(0) === '1') return '+' + d;
     return '+' + d;
   }
+  /* Texts must stay GSM-7: one em dash, arrow or curly quote switches the whole SMS to UCS-2 (70 chars/segment instead
+     of 160), so a 2-segment job offer becomes 3–4. The on-screen templates keep their typography; only the text that
+     leaves the console (sms: link body, clipboard copy) is normalized. Same pass as the server's twilio.ts gsmSafe(). */
+  function gsmSafe(s) {
+    return String(s == null ? '' : s)
+      .replace(/[—–]/g, '-')        // — –  → -
+      .replace(/→/g, 'to')               // →    → to
+      .replace(/[‘’]/g, "'")        // ‘ ’  → '
+      .replace(/[“”]/g, '"')        // “ ”  → "
+      .replace(/…/g, '...');             // …    → ...
+  }
   /* The '?&body=' form opens with the text prefilled on both iOS and Android. */
   function smsHref(phone, body) {
     var to = normalizePhone(phone);
     var h = 'sms:' + to;
-    if (body != null && body !== '') h += '?&body=' + encodeURIComponent(String(body));
+    if (body != null && body !== '') h += '?&body=' + encodeURIComponent(gsmSafe(body));
     return h;
   }
   function openHref(href) {
@@ -89,7 +100,7 @@
     } catch (e) { try { location.href = href; return true; } catch (e2) { return false; } }
   }
   function copyText(body, cb) {
-    body = String(body == null ? '' : body);
+    body = gsmSafe(body);                     // the copy is pasted into a texting app: same GSM-7 pass as smsHref()
     function done(ok) { if (typeof cb === 'function') cb(ok); }
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -148,11 +159,24 @@
   var LABELS = { driverJob: 'driver job', booked: 'booked', assigned: 'assigned', onTheWay: 'on the way', arrived: 'arrived', receipt: 'receipt', reminder: 'reminder', canceled: 'canceled' };
   var PASSENGER_MENU = ['booked', 'assigned', 'onTheWay', 'arrived', 'receipt'];
 
+  /* Owner decision 6: a driverJob template saved before {fareOrAccount} existed still reads "{fare} + tolls", which
+     would show the fare on Account rides.  Swap it in at read time (the Settings panel shows and re-saves the
+     swapped text, so the stored copy heals itself the next time templates are saved). */
+  function upgradeTemplate(key, tpl) {
+    if (key === 'driverJob' && tpl.indexOf('{fareOrAccount}') < 0 && tpl.indexOf('{fare} + tolls') >= 0) return tpl.split('{fare} + tolls').join('{fareOrAccount}');
+    return tpl;
+  }
+  function userTemplate(user, k) { var u = user[k]; return (typeof u === 'string' && u.trim()) ? upgradeTemplate(k, u) : ''; }
   function templates() {
     var out = {}, user = settings().templates || {};
-    Object.keys(DEFAULTS).forEach(function (k) { var u = user[k]; out[k] = (typeof u === 'string' && u.trim()) ? u : DEFAULTS[k]; });
+    Object.keys(DEFAULTS).forEach(function (k) { out[k] = userTemplate(user, k) || DEFAULTS[k]; });
     return out;
   }
+  /* Owner decision 6: what counts as an Account ride — the PAY TYPE governs: an account customer's ride that dispatch
+     switched to Cash / Credit Card must still show the fare so the driver collects it; the account is only the fallback
+     when the pay type is blank. Same test as driver-link.js isAccountRide(), driver.js fareLine() and the server's
+     templates.ts isAccountRide() (offer-job), so the console, the driver app and the SMS offer never disagree. */
+  function isAccountTrip(t) { return /account/i.test(String((t && t.payType) || '')) || (!(t && t.payType) && !!(t && t.accountId)); }
   function tripVars(t) {
     t = findTrip(t) || {};
     var s = settings();
@@ -164,6 +188,7 @@
     var when = t.date === today ? 'Today ' + time : (t.date === tomorrow ? 'Tomorrow ' + time : (date ? date + ', ' + time : time));
     var fare = Number(t.fare) || 0, tolls = Number(t.tolls) || 0, tip = Number(t.tip) || 0;
     var acct = t.accountId ? (((STATE.accounts || []).filter(function (a) { return a.id === t.accountId; })[0] || {}).name || 'Account') : '';
+    var onAccount = isAccountTrip(t);
     var stops = (t.stops || []).filter(function (x) { return x; });
     var car = carLabel(d), plate = v && v.plate ? String(v.plate) : '';
     return {
@@ -176,9 +201,9 @@
       pax: String(Number(t.pax) || 1), vtype: t.vtype || 'any car',
       fare: money(fare), tolls: money(tolls), tip: money(tip), total: money(fare + tolls + tip),
       /* decision 6: same wording as driver.js fareLine() and the server's {fareOrAccount} */
-      fareOrAccount: t.payType === 'Account' ? 'Account — no cash' : money(fare) + ' + tolls',
+      fareOrAccount: onAccount ? 'Account — no cash' : money(fare) + ' + tolls',
       tollsNote: tolls > 0 ? ' (incl. ' + money(tolls) + ' tolls)' : '',
-      payType: t.payType === 'Account' && acct ? 'Account: ' + acct : (t.payType || 'Cash'), account: acct,
+      payType: onAccount ? (acct ? 'Account: ' + acct : 'Account') : (t.payType || 'Cash'), account: acct,
       notes: t.notes || '', notesNote: t.notes ? ' Notes: ' + String(t.notes).trim() + '.' : '',
       driver: d ? d.name : 'your driver', driverFirst: d ? (firstName(d.name) || d.name) : 'Your driver', driverPhone: d ? (d.phone || '') : '',
       car: car, carNote: car ? ' in ' + car : '', vehicle: vehicleDesc(v, t) || 'car', plate: plate, plateNote: plate ? ', plate ' + plate : '',
@@ -440,7 +465,7 @@
     h += '<p class="hint" style="margin-top:0;">The <b>📱 Text</b> button on each trip opens your phone\'s Messages app with the text already filled in (one tap to send), or copies it. Edit the wording below; <span class="mono">{placeholders}</span> fill in from the trip, driver, vehicle and your company settings. Leave a box blank to go back to the default.</p>';
     h += '<div class="grid2">';
     TEMPLATE_META.forEach(function (m) {
-      var custom = typeof user[m.key] === 'string' && user[m.key].trim() && user[m.key] !== DEFAULTS[m.key];
+      var custom = !!userTemplate(user, m.key) && userTemplate(user, m.key) !== DEFAULTS[m.key];
       h += '<div class="msg-tpl"><label class="fld"><span class="lbl">' + esc(m.label) + (custom ? ' <span style="color:#1f7a3d;">(customized)</span>' : '') + '</span><textarea id="msg_tpl_' + m.key + '" data-key="' + m.key + '" rows="3" spellcheck="true">' + esc(tps[m.key]) + '</textarea></label><div class="hint" style="margin:2px 0 0;">' + esc(m.when) + '</div>'
         + (m.key === 'booked' ? '<div class="hint msg-consent" style="margin:4px 0 0;"><b>Say this on the phone:</b> “' + esc(CONSENT_SENTENCE) + '” <span style="opacity:.75;">(also printed on the cheat sheet; keep the “Reply STOP to opt out” line in the text above)</span></div>' : '')
         + '</div>';
@@ -482,7 +507,7 @@
   window.Messages = {
     templates: templates, defaults: DEFAULTS, meta: TEMPLATE_META, labels: LABELS, consentSentence: CONSENT_SENTENCE,
     vars: tripVars, render: render, fill: fill,
-    smsHref: smsHref, normalizePhone: normalizePhone,
+    smsHref: smsHref, normalizePhone: normalizePhone, gsmSafe: gsmSafe,
     textDriver: textDriver, textDriverTo: textDriverTo, textPassenger: textPassenger, copyJob: copyJob, copyText: copyText,
     mapsDirectionsUrl: mapsDirectionsUrl, appleMapsUrl: appleMapsUrl, wazeUrl: wazeUrl,
     menu: openMenu, closeMenu: closeMenu, sentChip: sentChip, markSent: markSent,

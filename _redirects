@@ -1,4 +1,9 @@
 # Cloudflare Pages short links (owner decision 2: go.<domain> on this same Pages project; docs/SETUP.md section 1 step 5)
+# Status: /d/ works today (driver.html resolves ?t=<connect token>).
+# /j/ is wired but NOT yet functional: offer-job texts /j/<4-char offer token>, while driver.html reads ?j= as a
+#   base64url(JSON) job payload and has no offer-token lookup yet -> the driver sees "No job on this link yet".
+#   Needs driver.js to resolve ?j=<token> against offers.body->>'token' (PRODUCT-DESIGN.md section 5 "Job offer" text, line 284).
+# /t/ and /r/ point at track.html (Phase 3) and pay.html (Phase 4), which do not exist yet -> 404 until they land.
 /d/:token   /driver.html?t=:token   302
 /j/:token   /driver.html?j=:token   302
 /t/:token   /track.html?t=:token    302
