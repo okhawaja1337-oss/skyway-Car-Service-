@@ -6,7 +6,10 @@ import { admin, Json } from "./db.ts";
 
 export const DEFAULT_TEMPLATES: Record<string, string> = {
   // passenger lifecycle (1–9)
-  booked: "{biz}: Your ride is booked for {dateLong}, {time12}. Pickup: {pu} → {do}. Est. {fare} + tolls. Conf #{dispatchNo}. Reply C to cancel or call {bizPhone}.{trackLine}",
+  // Owner decision 8 (default): every booking confirmation ends with the opt-out line.  The full consent
+  // sentence dispatchers say on the phone is "By booking you agree to receive ride updates by text;
+  // reply STOP to opt out." (dispatcher cheat sheet, Settings → Messages, book.html, 10DLC opt-in description).
+  booked: "{biz}: Your ride is booked for {dateLong}, {time12}. Pickup: {pu} → {do}. Est. {fare} + tolls. Conf #{dispatchNo}. Reply C to cancel or call {bizPhone}.{trackLine} Reply STOP to opt out.",
   assigned: "Your {biz} driver is {driverName} in a {vehicle}, plate {plate} ({car}).{trackLine}",
   enroute: "{driverFirst} is on the way — arriving in about {etaMin} min.",
   arrived: "{driverFirst} has arrived at {puShort} in {car} ({vehicleShort}). Please come out when ready.",
@@ -118,7 +121,10 @@ export function tripVars(opts: {
     fare: fmtMoney(fare, currency), total: fmtMoney(total, currency),
     tollsNote: tolls ? ` (incl. ${fmtMoney(tolls, currency)} tolls)` : "",
     pax: t.pax || 1, paxName: firstName(t.passenger) + (String(t.passenger || "").trim().split(/\s+/)[1] ? ` ${String(t.passenger).trim().split(/\s+/)[1][0]}.` : ""),
-    vtype: t.vtype || "", fareOrAccount: t.payType === "Account" ? "Account – no cash" : `${fmtMoney(fare, currency)} + tolls`,
+    vtype: t.vtype || "",
+    // Owner decision 6 (default): drivers see the fare on job offers; Account rides show "Account — no cash"
+    // (same wording as driver.js fareLine()).  Override per location by editing the `driverJob` template row.
+    fareOrAccount: t.payType === "Account" ? "Account — no cash" : `${fmtMoney(fare, currency)} + tolls`,
     driverName: d.name ? `${firstName(d.name)}${String(d.name).trim().split(/\s+/)[1] ? ` ${String(d.name).trim().split(/\s+/)[1][0]}.` : ""}` : "your driver",
     driverFirst: firstName(d.name) || "Your driver",
     car: carNo ? `Car ${carNo}` : "", vehicle: vehicleDesc, vehicleShort: [v.color, v.model, v.plate].filter(Boolean).join(" "), plate: v.plate || "",

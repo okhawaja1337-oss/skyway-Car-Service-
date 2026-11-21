@@ -1,12 +1,17 @@
 // square-charge — card on file: hold at booking, charge at drop-off, refund (PRODUCT-DESIGN.md §6).
 //
 // POST { action: "authorize", location_id, trip_id }
-//      CreatePayment {autocomplete:false, amount = estimate × 1.2, idempotency_key = trip.id+':auth'}
-//      TODO(owner decision 5): hold estimate+20% (default) or the estimate only
+//      CreatePayment {autocomplete:false, amount = estimate × holdFactor + tolls, idempotency_key = trip.id+':auth'}
+//      Owner decision 5: hold the estimate + 20 % (settings.holdFactor, default 1.2, clamped 1.0–1.5).
+//      The hold is released automatically when the final charge is smaller — see "capture".
 // POST { action: "capture", location_id, trip_id, tip_cents?: 0, final_cents?: <override> }
 //      final = fare + tolls + waitFee + stopFee×stops + ccu (accounts) + autoGratuity%
+//      Owner decision 4: autoGratuity% is 0 unless an account asked for it —
+//      accounts.body.autoGratuityPct overrides settings.autoGratuityPct; both default 0.
 //      ≤ hold → UpdatePayment(amount, tip) + CompletePayment; > hold → CancelPayment + CreatePayment{autocomplete:true}
 //      failure → trips.body.payment.status='failed', square-link, Needs-you
+//      No-show fees are NOT charged here automatically: the dispatcher presses "Charge no-show fee" in the
+//      console's Money panel (money.js), which only works when a card is on file.
 // POST { action: "charge", location_id, trip_id, amount_cents, tip_cents?, source_id? }  (no prior hold; pay.html tips)
 // POST { action: "refund", location_id, trip_id, amount_cents, reason }
 // → { ok, payment_id, status, amount_cents, ... }
@@ -27,9 +32,41 @@ interface Body extends Json {
   reason?: string;
 }
 
-const HOLD_FACTOR = 1.2;        // TODO(owner decision 5)
+// Owner decision 5 (accepted default): hold the estimate + 20 % on card rides. `settings.holdFactor`
+// can change it later without a deploy; anything outside 1.0–1.5 falls back to the clamp edge.
+const HOLD_FACTOR = 1.2;
+const HOLD_FACTOR_MIN = 1.0, HOLD_FACTOR_MAX = 1.5;
 
 function cents(n: unknown): number { return Math.round((Number(n) || 0) * 100); }
+
+/** Hold multiplier for `authorize`: settings.holdFactor (number) clamped to 1.0–1.5, default HOLD_FACTOR. */
+function holdFactor(settings: Json): number {
+  const n = Number(settings.holdFactor);
+  if (!Number.isFinite(n) || n <= 0) return HOLD_FACTOR;
+  return Math.min(HOLD_FACTOR_MAX, Math.max(HOLD_FACTOR_MIN, n));
+}
+
+/** Owner decision 4: automatic gratuity only on Account rides, per-account override first, otherwise the
+ *  location setting; both default 0 (no automatic gratuity until an account asks). Clamped 0–100. */
+function gratuityPct(trip: Json, settings: Json, account: Json | null): number {
+  if (trip.payType !== "Account") return 0;
+  const own = account ? Number(account.autoGratuityPct) : NaN;
+  const pct = Number.isFinite(own) ? own : Number(settings.autoGratuityPct) || 0;
+  return Math.min(100, Math.max(0, pct));
+}
+
+/** settings.body for the location ({} when none). */
+async function loadSettings(locId: string): Promise<Json> {
+  const { data } = await admin().from("settings").select("body").eq("id", locId).maybeSingle();
+  return ((data as { body: Json } | null)?.body) || {};
+}
+
+/** accounts.body for the trip's account (null for non-account trips). */
+async function loadAccount(trip: Json): Promise<Json | null> {
+  if (trip.payType !== "Account" || !trip.accountId) return null;
+  const { data } = await admin().from("accounts").select("body").eq("id", String(trip.accountId)).maybeSingle();
+  return ((data as { body: Json } | null)?.body) || null;
+}
 
 /** Card on file for the trip: passenger (by phone) first, then the account. */
 async function cardFor(locId: string, trip: Json): Promise<{ sourceId: string; customerId: string } | null> {
@@ -53,13 +90,13 @@ async function cardFor(locId: string, trip: Json): Promise<{ sourceId: string; c
 }
 
 /** Final amount at drop-off in cents (mirrors the console's Money panel math). */
-function finalCents(trip: Json, settings: Json, rate: Json): number {
+function finalCents(trip: Json, settings: Json, rate: Json, account: Json | null): number {
   const fare = cents(trip.fare), tolls = cents(trip.tolls);
   const waitMin = Number(trip.waitMin) || 0, freeWait = Number(rate.freeWaitMin ?? 10), perMin = cents(rate.waitPerMin ?? 0);
   const waitFee = Math.max(0, waitMin - freeWait) * perMin;
   const stops = Array.isArray(trip.stops) ? trip.stops.length : 0, stopFee = stops * cents(rate.stopFee ?? 0);
   const ccu = trip.payType === "Account" || trip.payType === "Credit Card" ? cents(settings.ccu ?? 0) + Math.round(fare * (Number(settings.cardPct) || 0) / 100) : 0;
-  const grat = trip.payType === "Account" ? Math.round(fare * (Number(settings.autoGratuityPct) || 0) / 100) : 0;   // TODO(owner decision 4)
+  const grat = Math.round(fare * gratuityPct(trip, settings, account) / 100);   // 0 by default (owner decision 4)
   return fare + tolls + waitFee + stopFee + ccu + grat;
 }
 
@@ -88,13 +125,14 @@ serve(async (req) => {
       await raiseNeedsYou({ location_id: loc.id, kind: "no_card", trip_id: trip.id, note: `#${ref}: card ride but no card on file — add a card or send a pay link.` });
       return json({ ok: false, reason: "no card on file" });
     }
-    const hold = Math.round(cents(t.fare) * HOLD_FACTOR) + cents(t.tolls);
+    const factor = holdFactor(await loadSettings(loc.id));
+    const hold = Math.round(cents(t.fare) * factor) + cents(t.tolls);
     try {
       const { payment: p } = await createPayment({ idempotencyKey: `${trip.id}:auth`, amount: money(hold, currency), sourceId: card.sourceId, customerId: card.customerId || undefined, locationId: sqLoc, autocomplete: false, referenceId: ref, note: route });
       const next = { ...payment, status: "authorized", paymentId: p.id, holdCents: hold, currency, sourceId: card.sourceId, customerId: card.customerId, authorizedAt: new Date().toISOString() };
       await patchTripBody(trip.id, { payment: next });
       await recordPayment({ id: p.id, location_id: loc.id, trip_id: trip.id, kind: "auth", amount: hold, currency, status: String(p.status), body: p });
-      await audit(loc.id, "square_authorized", { trip_id: trip.id, body: { hold } });
+      await audit(loc.id, "square_authorized", { trip_id: trip.id, body: { hold, factor } });
       return json({ ok: true, payment_id: p.id, status: p.status, amount_cents: hold });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -105,19 +143,24 @@ serve(async (req) => {
   }
 
   if (body.action === "capture") {
-    const { data: settingsRow } = await admin().from("settings").select("body").eq("id", loc.id).maybeSingle();
-    const settings = ((settingsRow as { body: Json } | null)?.body) || {};
+    const settings = await loadSettings(loc.id);
     const rate = (settings.rate as Json) || {};
-    const finalC = body.final_cents != null ? Math.round(Number(body.final_cents)) : finalCents(t, settings, rate);
+    const account = await loadAccount(t);
+    const finalC = body.final_cents != null ? Math.round(Number(body.final_cents)) : finalCents(t, settings, rate, account);
     const tipC = Math.max(0, Math.round(Number(body.tip_cents) || cents(t.tip)));
     if (payment.status === "paid") return json({ ok: true, reason: "already paid", payment_id: payment.paymentId });
     const holdC = Number(payment.holdCents) || 0;
     try {
       let p: Json;
       if (payment.status === "authorized" && payment.paymentId && finalC + tipC <= holdC) {
+        // Hold release (owner decision 5): the authorization was for estimate × holdFactor + tolls. We first
+        // UpdatePayment to the smaller final amount (+ tip) and then CompletePayment — Square captures only that
+        // amount and releases the remainder of the hold back to the passenger's card automatically (a partial
+        // capture; no separate refund or void call is needed). Equal amounts simply capture the whole hold.
         await updatePayment(String(payment.paymentId), `${trip.id}:update:${finalC}:${tipC}`, money(finalC, currency), tipC ? money(tipC, currency) : undefined);
         p = (await completePayment(String(payment.paymentId))).payment;
       } else {
+        // Final > hold (or no hold): void the authorization — which releases it in full — and charge the card again.
         if (payment.status === "authorized" && payment.paymentId) await cancelPayment(String(payment.paymentId)).catch(() => undefined);
         const card = body.source_id ? { sourceId: body.source_id, customerId: String(payment.customerId || "") } : await cardFor(loc.id, t);
         if (!card) throw new Error("no card on file");

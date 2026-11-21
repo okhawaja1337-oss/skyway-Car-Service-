@@ -4,11 +4,19 @@
    The job arrives in the URL:  driver.html#j=<base64url(JSON)>
      JSON = {no, date 'YYYY-MM-DD', time 'HH:MM', pu, do, stops[], pax, name,
              phone, vtype, fare, tolls, notes, pay?, biz:{name, phone}, drv:{name, car}}
+   A connect link arrives as:   driver.html?t=<token>   (go.<domain>/d/<token>)
    Everything the driver does opens an sms: link to the business number with
    the short codes the design understands (Y/N accept, E/A/P/D status,
    L location, D summary) and advances a local state kept in localStorage,
    so a reload keeps the job where it was. Works offline after first load
    (sw.js caches the shell). Plain ES2019, no build step, no frameworks.
+
+   Owner decision 7 (default): location is shared ONLY while the driver is
+   On shift, and never before the driver has tapped "I agree" under the
+   consent sentence (CONSENT_TEXT). Consent is kept on the phone
+   (skyway_drv_consent = ISO time) and travels with the first payload the
+   page sends — the connect completion POST and the "L" location text — so
+   the cloud can set drivers.body.consentAt.
 
    Public API: window.Driver (see bottom).
    ====================================================================== */
@@ -18,6 +26,11 @@
   var LS_JOB = 'skyway_drv_job_';     // + key  -> per-job state
   var LS_LAST = 'skyway_drv_last';    // last job hash payload (to resume)
   var LS_BIZ = 'skyway_drv_biz';      // last known business {name, phone}
+  var LS_CONSENT = 'skyway_drv_consent'; // ISO time the driver tapped "I agree" (owner decision 7)
+  var LS_SHIFT = 'skyway_drv_shift';     // {on, at} — On shift / Off shift, persisted
+  var LS_CONNECT = 'skyway_drv_connect'; // {token, ok, at, driverId, name, car} after a token connect
+  /* Owner decision 7 (default): the exact consent sentence approved by the owner. Do not reword here. */
+  var CONSENT_TEXT = "Skyway tracks this phone's location only while you are On shift, to dispatch jobs and show passengers their ETA. Raw location data is kept 30 days.";
   var STAGES = ['offered', 'accepted', 'enroute', 'arrived', 'pob', 'done'];
   var RAIL = [
     { from: 'accepted', to: 'enroute', code: 'E', label: 'On my way', ico: '🚗', cls: 'go' },
@@ -26,7 +39,7 @@
     { from: 'pob', to: 'done', code: 'D', label: 'Complete', ico: '🏁', cls: 'go' }
   ];
 
-  var JOB = null, KEY = '', ST = null;
+  var JOB = null, KEY = '', ST = null, TOKEN = '', SHIFT = null;
   var $ = function (id) { return document.getElementById(id); };
 
   /* ---------- helpers ---------- */
@@ -96,18 +109,61 @@
     var m = String(j.notes || '').match(/\b(?:flight|flt|fl)?\s*#?\s*([A-Z]{2}|[A-Z]\d|\d[A-Z])\s?(\d{2,4})\b/i);
     return m ? (m[1] + m[2]).toUpperCase() : '';
   }
+  /* Owner decision 6 (default): drivers see the fare on the job card; Account rides show "Account — no cash"
+     (same wording as the console's {fareOrAccount} in messages.js and the server's offer-job template). */
   function fareLine(j) {
     if (String(j.pay || '').toLowerCase() === 'account' || j.acct) return { txt: 'Account — no cash', acct: true };
     if (j.fare != null && j.fare !== '' && Number(j.fare) > 0) return { txt: money(j.fare, true) + ' + tolls', acct: false };
     return { txt: 'Fare: ask dispatch', acct: false };
   }
-  function bizPhone() { return (JOB && JOB.biz && JOB.biz.phone) || ''; }
+  function bizPhone() { return (JOB && JOB.biz && JOB.biz.phone) || (ls(LS_BIZ) || {}).phone || ''; }
   function codeHref(code) { return smsHref(bizPhone(), code + ' #' + (JOB ? JOB.no : '')); }
 
   /* ---------- map deep links ---------- */
   function gmaps(addr) { return 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(addr || '') + '&travelmode=driving'; }
   function amaps(addr) { return 'http://maps.apple.com/?daddr=' + encodeURIComponent(addr || '') + '&dirflg=d'; }
   function waze(addr) { return 'https://waze.com/ul?q=' + encodeURIComponent(addr || '') + '&navigate=yes'; }
+
+  /* ---------- consent (owner decision 7) ---------- */
+  function consentAt() { var v = ls(LS_CONSENT); return typeof v === 'string' && v ? v : ''; }
+  function giveConsent() { var iso = consentAt() || new Date().toISOString(); ls(LS_CONSENT, iso); return iso; }
+  function consentHtml(ctx) {
+    var h = '<div class="consent" id="consentBox"><div class="consent-txt">' + esc(CONSENT_TEXT) + '</div>';
+    h += '<button class="btn go" type="button" id="btnConsent" data-act="consent" data-ctx="' + esc(ctx || 'gps') + '"><span class="ico">✅</span> I agree</button>';
+    h += '<div class="small muted" style="margin-top:8px">Nothing is shared until you agree. You can go Off shift at any time.</div></div>';
+    return h;
+  }
+
+  /* ---------- shift (owner decision 7: tracking follows the shift, not the job) ---------- */
+  function loadShift() {
+    var s = ls(LS_SHIFT);
+    SHIFT = s && typeof s === 'object' ? s : { on: false, at: '' };
+    SHIFT.on = !!SHIFT.on;
+    return SHIFT;
+  }
+  function onShift() { return !!(SHIFT && SHIFT.on); }
+  function setShift(on, note) {
+    on = !!on; if (!SHIFT) loadShift();
+    var changed = SHIFT.on !== on;
+    SHIFT.on = on; SHIFT.at = new Date().toISOString(); ls(LS_SHIFT, SHIFT);
+    if (on) { gps.denied = false; if (consentAt()) gpsStart(); }
+    else { gpsStop(); gps.last = null; gps.err = ''; }      // off shift: stop the watch and clear the live indicator
+    renderGps(); renderShift();
+    if (changed && note) toast(note);
+    return on;
+  }
+  function shiftCard() {
+    var on = onShift();
+    return '<section class="card shiftbar" id="shiftCard"><label class="switch" style="padding:0"><span><b id="shiftLbl">' + (on ? 'On shift' : 'Off shift') + '</b><span class="small muted shift-note" id="shiftNote">' + (on ? 'sharing location with dispatch' : 'location is not shared') + '</span></span><input type="checkbox" id="inShift"' + (on ? ' checked' : '') + '><span class="knob"></span></label></section>';
+  }
+  function renderShift() {
+    var on = onShift();
+    var chip = $('shiftChip'); if (chip) { chip.textContent = on ? 'on shift' : 'off shift'; chip.className = 'chip' + (on ? ' ok' : ' dim'); chip.title = on ? 'Location is shared with dispatch while you are On shift' : 'Off shift — this phone is not sharing its location'; }
+    var live = $('gpsChip'); if (live) { if (on && gps.watch != null && gps.last) live.classList.remove('hidden'); else live.classList.add('hidden'); }
+    var sw = $('inShift'); if (sw) sw.checked = on;
+    var lbl = $('shiftLbl'); if (lbl) lbl.textContent = on ? 'On shift' : 'Off shift';
+    var note = $('shiftNote'); if (note) note.textContent = on ? 'sharing location with dispatch' : 'location is not shared';
+  }
 
   /* ---------- job + state ---------- */
   function readJobFromUrl() {
@@ -129,6 +185,14 @@
       return j;
     } catch (e) { return null; }
   }
+  /* connect token: driver.html?t=<token> (go.<domain>/d/<token> redirects here) */
+  function readTokenFromUrl() {
+    try {
+      var q = new URLSearchParams(location.search).get('t'); if (q) return String(q).trim();
+      var m = (location.hash || '').match(/[#&]t=([^&]+)/); if (m) return decodeURIComponent(m[1]).trim();
+    } catch (e) {}
+    return '';
+  }
   function jobKey(j) { return LS_JOB + (j.no || 'x') + '_' + (j.date || ''); }
   function loadState() {
     var s = ls(KEY) || {};
@@ -136,11 +200,13 @@
     s.t = s.t || {};
     return s;
   }
-  function saveState() { ls(KEY, ST); }
+  function saveState() { if (KEY && ST) ls(KEY, ST); }
   function setStage(stage, silent) {
     if (!JOB) return false;
     if (STAGES.indexOf(stage) < 0 && stage !== 'passed') return false;
     ST.stage = stage; ST.t[stage] = new Date().toISOString(); saveState();
+    // accepting a job puts the driver On shift (decision 7: tracking is tied to the shift)
+    if (stage === 'accepted' && !onShift()) setShift(true, 'You are now On shift — location is shared while you work.');
     if (!silent) render();
     wake();
     return true;
@@ -167,62 +233,115 @@
   }
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') wake(); });
 
-  /* ---------- GPS ---------- */
-  var gps = { watch: null, last: null, err: '', tick: null };
+  /* ---------- GPS (runs ONLY while On shift and only after consent) ---------- */
+  var gps = { watch: null, last: null, err: '', tick: null, denied: false };
   function gpsSupported() { return !!(navigator.geolocation && navigator.geolocation.watchPosition); }
   function gpsStart() {
-    if (!gpsSupported()) { gps.err = 'This phone/browser has no location service.'; renderGps(); return; }
-    if (!window.isSecureContext && location.protocol !== 'file:') { gps.err = 'Location only works on an https:// link. Ask dispatch for the secure link.'; renderGps(); return; }
-    if (gps.watch != null) return;
+    if (!onShift()) { renderGps(); return false; }        // decision 7: never track off shift
+    if (!consentAt()) { renderGps(); return false; }      // consent first — the card shows the sentence + "I agree"
+    if (!gpsSupported()) { gps.err = 'This phone/browser has no location service.'; renderGps(); return false; }
+    if (!window.isSecureContext && location.protocol !== 'file:') { gps.err = 'Location only works on an https:// link. Ask dispatch for the secure link.'; renderGps(); return false; }
+    if (gps.watch != null) return true;
     gps.err = '';
     try {
       gps.watch = navigator.geolocation.watchPosition(function (pos) {
-        gps.last = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, speed: pos.coords.speed, at: Date.now() };
+        gps.last = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, speed: pos.coords.speed, heading: pos.coords.heading, at: Date.now() };
         gps.err = ''; renderGps();
       }, function (e) {
         var c = e && e.code;
         gps.err = c === 1 ? 'Location is blocked for this page. iPhone: Settings → Privacy → Location Services → Safari Websites → "While Using". Android: tap the lock icon in the address bar → Permissions → Location → Allow. Then press Share my location again.'
           : c === 3 ? 'Still looking for a GPS fix… go near a window or outside.'
             : 'Location unavailable right now (' + ((e && e.message) || 'unknown') + ').';
-        if (c === 1) { gpsStop(false); ST.share = false; saveState(); }
+        if (c === 1) { gps.denied = true; gpsStop(); }
         renderGps();
       }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
-      ST.share = true; saveState();
       if (!gps.tick) gps.tick = setInterval(renderGpsAge, 1000);
     } catch (e) { gps.err = 'Could not start location: ' + e.message; }
     renderGps();
+    return gps.watch != null;
   }
-  function gpsStop(persist) {
+  function gpsStop() {
     if (gps.watch != null) { try { navigator.geolocation.clearWatch(gps.watch); } catch (e) {} }
     gps.watch = null; if (gps.tick) { clearInterval(gps.tick); gps.tick = null; }
-    if (persist !== false) { ST.share = false; saveState(); }
     renderGps();
   }
   function gpsAgeTxt() { if (!gps.last) return ''; var s = Math.max(0, Math.round((Date.now() - gps.last.at) / 1000)); return s < 60 ? 'updated ' + s + 's ago' : 'updated ' + Math.round(s / 60) + ' min ago'; }
-  function gpsLocHref() {
-    if (!gps.last) return '#';
+  /* "L #<job> <lat>,<lng> <map link> consent:<ISO>" — the consent stamp rides along so dispatch / the cloud
+     can record drivers.body.consentAt from the very first location the phone sends. */
+  function locText() {
+    if (!gps.last) return '';
     var ll = gps.last.lat.toFixed(5) + ',' + gps.last.lng.toFixed(5);
-    return smsHref(bizPhone(), 'L #' + JOB.no + ' ' + ll + ' https://maps.google.com/?q=' + ll);
+    var b = 'L' + (JOB && JOB.no ? ' #' + JOB.no : '') + ' ' + ll + ' https://maps.google.com/?q=' + ll;
+    if (consentAt()) b += ' consent:' + consentAt();
+    return b;
   }
+  function gpsLocHref() { return gps.last ? smsHref(bizPhone(), locText()) : '#'; }
   function renderGpsAge() { var a = $('gpsAge'); if (a) a.textContent = gpsAgeTxt(); }
   function renderGps() {
-    var host = $('gpsBody'); if (!host) return;
-    var on = gps.watch != null, h = '';
-    if (on) {
-      if (gps.last) {
-        h += '<div class="gps-vals"><b>' + gps.last.lat.toFixed(5) + ', ' + gps.last.lng.toFixed(5) + '</b><br>±' + Math.round(gps.last.acc || 0) + ' m · <span id="gpsAge">' + esc(gpsAgeTxt()) + '</span></div>';
-        h += '<div class="stack" style="margin-top:10px"><a class="btn navy" id="btnSendLoc" data-act="sendloc" href="' + esc(gpsLocHref()) + '"><span class="ico">📡</span> Send location to dispatch</a>';
+    var host = $('gpsBody');
+    if (host) {
+      var h = '';
+      if (!onShift()) {
+        h += '<div class="muted small">You are <b>Off shift</b> — this phone is not sharing its location.</div>';
+        h += '<div class="stack" style="margin-top:10px"><button class="btn navy" type="button" id="btnShareLoc" data-act="shifton"><span class="ico">📍</span> Go On shift &amp; share location</button></div>';
+      } else if (!consentAt()) {
+        h += consentHtml('gps');
       } else {
-        h += '<div class="muted">Getting a GPS fix… <span id="gpsAge"></span></div><div class="stack" style="margin-top:10px">';
+        var on = gps.watch != null;
+        if (on) {
+          if (gps.last) {
+            h += '<div class="gps-vals"><span class="live-dot" aria-hidden="true"></span><b>' + gps.last.lat.toFixed(5) + ', ' + gps.last.lng.toFixed(5) + '</b><br>±' + Math.round(gps.last.acc || 0) + ' m · <span id="gpsAge">' + esc(gpsAgeTxt()) + '</span></div>';
+            h += '<div class="stack" style="margin-top:10px"><a class="btn navy" id="btnSendLoc" data-act="sendloc" href="' + esc(gpsLocHref()) + '"><span class="ico">📡</span> Send location to dispatch</a>';
+          } else {
+            h += '<div class="muted">Getting a GPS fix… <span id="gpsAge"></span></div><div class="stack" style="margin-top:10px">';
+          }
+        } else {
+          h += '<div class="stack"><button class="btn navy" type="button" id="btnShareLoc" data-act="gpson"><span class="ico">📍</span> Share my location</button>';
+        }
+        h += '<button class="btn ghost sm" type="button" data-act="shiftoff">Go Off shift — stop sharing</button></div>';
+        h += '<div class="small muted" style="margin-top:8px">Shared only while you are On shift. Keep Skyway open on a job — a phone browser cannot report location when the screen is locked.</div>';
       }
-      h += '<button class="btn ghost sm" type="button" data-act="gpsoff">Stop sharing</button></div>';
-      h += '<div class="small muted" style="margin-top:8px">Keep Skyway open while on a job — a phone browser cannot report location when the screen is locked.</div>';
-    } else {
-      h += '<button class="btn navy" type="button" id="btnShareLoc" data-act="gpson"><span class="ico">📍</span> Share my location</button>';
-      h += '<div class="small muted" style="margin-top:8px">Dispatch sees where you are so they can plan the next job. Only while you are on a job.</div>';
+      if (gps.err) h += '<div class="err" id="gpsErr">' + esc(gps.err) + '</div>';
+      host.innerHTML = h;
     }
-    if (gps.err) h += '<div class="err" id="gpsErr">' + esc(gps.err) + '</div>';
-    host.innerHTML = h;
+    renderShift();
+  }
+
+  /* ---------- connect phone (token link → consent → POST complete) ---------- */
+  var CONNECT = { busy: false, err: '' };
+  function metaContent(name) { try { var m = document.querySelector('meta[name="' + name + '"]'); return m ? String(m.getAttribute('content') || '').trim() : ''; } catch (e) { return ''; } }
+  function functionsUrl() { return String(window.SKYWAY_FUNCTIONS_URL || metaContent('skyway-functions') || '').trim().replace(/\/+$/, ''); }
+  function anonKey() { return String(window.SKYWAY_ANON_KEY || metaContent('skyway-anon-key') || '').trim(); }
+  function connected() { var c = ls(LS_CONNECT); return c && c.ok ? c : null; }
+  function completeConnect() {
+    if (!TOKEN || CONNECT.busy) return false;
+    var at = giveConsent();
+    var fn = functionsUrl();
+    if (!fn) {
+      CONNECT.err = 'This page has no dispatch server address yet. Your consent is saved on this phone — text JOIN to dispatch and they will connect you.';
+      render(); return false;
+    }
+    if (typeof window.fetch !== 'function') { CONNECT.err = 'This browser cannot connect — text JOIN to dispatch instead.'; render(); return false; }
+    CONNECT.busy = true; CONNECT.err = ''; render();
+    var headers = { 'Content-Type': 'application/json' };
+    var k = anonKey(); if (k) { headers.apikey = k; headers.Authorization = 'Bearer ' + k; }
+    var standalone = !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+    var payload = {
+      action: 'complete', token: TOKEN,
+      consentAt: at, consentText: CONSENT_TEXT,
+      device: { platform: String(navigator.platform || ''), ua: String(navigator.userAgent || '').slice(0, 300), standalone: standalone, version: 'driver.html' }
+    };
+    fetch(fn + '/connect-invite', { method: 'POST', headers: headers, body: JSON.stringify(payload) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: !!(r.ok && j && j.ok), j: j || {} }; }, function () { return { ok: false, j: { error: 'Unexpected reply (' + r.status + ')' } }; }); })
+      .then(function (res) {
+        CONNECT.busy = false;
+        if (!res.ok) { CONNECT.err = String((res.j && res.j.error) || 'Could not connect — ask dispatch for a new link.'); render(); return; }
+        var j = res.j, d = j.driver || {};
+        ls(LS_CONNECT, { token: TOKEN, ok: true, at: new Date().toISOString(), driverId: d.id || '', name: d.name || '', car: d.carNo || '', consentAt: j.consentAt || at });
+        if (j.biz && (j.biz.name || j.biz.phone)) ls(LS_BIZ, { name: j.biz.name || '', phone: j.biz.phone || '' });
+        toast('Phone connected to dispatch.'); render();
+      }, function (e) { CONNECT.busy = false; CONNECT.err = 'Network problem: ' + ((e && e.message) || e) + '. Try again when you have signal.'; render(); });
+    return true;
   }
 
   /* ---------- rendering ---------- */
@@ -230,8 +349,14 @@
     var bizEl = $('bizName'), who = $('drvName');
     var biz = (JOB && JOB.biz && JOB.biz.name) || (ls(LS_BIZ) || {}).name || 'Skyway Driver';
     if (bizEl) bizEl.textContent = biz;
-    if (who) { var d = JOB && JOB.drv; who.textContent = d && (d.name || d.car) ? [d.name, d.car ? 'Car ' + d.car : ''].filter(Boolean).join(' · ') : ''; }
+    if (who) {
+      var d = JOB && JOB.drv, c = connected();
+      if (d && (d.name || d.car)) who.textContent = [d.name, d.car ? 'Car ' + d.car : ''].filter(Boolean).join(' · ');
+      else if (c && (c.name || c.car)) who.textContent = [c.name, c.car ? 'Car ' + c.car : ''].filter(Boolean).join(' · ');
+      else who.textContent = '';
+    }
     var f = $('foot'); if (f) f.textContent = JOB ? 'Job #' + JOB.no + ' · taps open your Messages app with the code prefilled — just press send.' : 'Skyway Driver · add this page to your Home Screen.';
+    renderShift();
   }
   function legHtml(lbl, addr, cls) {
     return '<div class="leg"><span class="dot ' + cls + '"></span><div><div class="lbl">' + lbl + '</div><div class="addr' + (cls === 'stop' ? ' sub' : '') + '">' + esc(addr || '—') + '</div></div></div>';
@@ -291,8 +416,9 @@
     h += '<section class="card" id="scr-job"><div class="stack">';
     h += '<a class="btn huge go" id="btnAccept" data-act="stage" data-to="accepted" href="' + esc(codeHref('Y')) + '"><span class="ico">✅</span> Accept</a>';
     h += '<a class="btn warn" id="btnPass" data-act="stage" data-to="passed" href="' + esc(codeHref('N')) + '"><span class="ico">✖</span> Pass</a>';
-    h += '</div><div class="small muted center" style="margin-top:10px">Each button opens a text to dispatch (Y / N #' + esc(JOB.no) + ') — press send.</div></section>';
+    h += '</div><div class="small muted center" style="margin-top:10px">Each button opens a text to dispatch (Y / N #' + esc(JOB.no) + ') — press send.' + (onShift() ? '' : ' Accepting puts you On shift.') + '</div></section>';
     if (bizPhone()) h += '<section class="card"><a class="btn ghost sm" href="' + esc(telHref(bizPhone())) + '">📞 Call dispatch</a></section>';
+    h += gpsCard();
     return h;
   }
   function screenPassed() {
@@ -346,6 +472,33 @@
     h += gpsCard();
     return h;
   }
+  function a2hsCard() {
+    var h = '<section class="card" id="a2hs"><h2>Add to Home Screen</h2><div class="muted small">Then Skyway Driver opens like an app, full screen, even with no signal.</div>';
+    h += '<div id="installRow" class="hidden" style="margin-top:10px"><button class="btn navy" type="button" id="btnInstall" data-act="install">⬇ Install Skyway Driver</button></div>';
+    h += '<h3 style="margin-top:12px"> iPhone (Safari)</h3><ol class="steps"><li>Tap the <b>Share</b> button (square with an arrow) at the bottom.</li><li>Scroll and tap <b>Add to Home Screen</b>.</li><li>Tap <b>Add</b>. Open it from your Home Screen from now on.</li></ol>';
+    h += '<h3 style="margin-top:12px">🤖 Android (Chrome)</h3><ol class="steps"><li>Tap the <b>⋮</b> menu at the top right.</li><li>Tap <b>Install app</b> or <b>Add to Home screen</b>.</li><li>Tap <b>Install</b>. Open it from your Home Screen from now on.</li></ol></section>';
+    return h;
+  }
+  function screenConnect() {
+    var c = connected(), h = '<section class="card" id="scr-connect"><h2>Connect phone</h2>';
+    if (c && c.token === TOKEN) {
+      h += '<h3>✅ Phone connected' + (c.name ? ' — ' + esc(c.name) : '') + '</h3>';
+      h += '<div class="muted small">Dispatch can now send jobs to this phone. Flip <b>On shift</b> at the top when you start working — that is when location sharing begins.</div>';
+    } else if (CONNECT.busy) {
+      h += '<h3>Connecting…</h3><div class="muted small">Telling dispatch this phone is yours.</div>';
+    } else if (!consentAt()) {
+      h += '<h3>Before you connect</h3><div class="muted small" style="margin-bottom:10px">Please read and agree — this is how dispatch uses your phone\'s location.</div>' + consentHtml('connect');
+    } else {
+      h += '<h3>Ready to connect</h3><div class="muted small" style="margin-bottom:10px">You agreed to location sharing on ' + esc(new Date(consentAt()).toLocaleDateString()) + '. Tap to finish connecting this phone.</div>';
+      h += '<div class="stack"><button class="btn huge go" type="button" id="btnConnect" data-act="connect"><span class="ico">🔗</span> Connect this phone</button></div>';
+      if (CONNECT.err) {
+        h += '<div class="err" id="connectErr">' + esc(CONNECT.err) + '</div>';
+        if (bizPhone()) h += '<a class="btn navy sm" style="margin-top:10px" href="' + esc(smsHref(bizPhone(), 'JOIN')) + '">💬 Text JOIN to dispatch</a>';
+      }
+    }
+    h += '</section>' + gpsCard() + a2hsCard();
+    return h;
+  }
   function screenNoJob() {
     var biz = ls(LS_BIZ) || {}, last = ls(LS_LAST);
     var h = '<section class="card" id="scr-nojob"><h2>Connect phone</h2><h3>No job on this link yet</h3>';
@@ -355,10 +508,7 @@
     h += '</ol>';
     if (last && last.no) h += '<div class="stack" style="margin-top:12px"><button class="btn gold" type="button" id="btnResume" data-act="resume">Resume job #' + esc(last.no) + '</button></div>';
     h += '</section>';
-    h += '<section class="card" id="a2hs"><h2>Add to Home Screen</h2><div class="muted small">Then Skyway Driver opens like an app, full screen, even with no signal.</div>';
-    h += '<div id="installRow" class="hidden" style="margin-top:10px"><button class="btn navy" type="button" id="btnInstall" data-act="install">⬇ Install Skyway Driver</button></div>';
-    h += '<h3 style="margin-top:12px"> iPhone (Safari)</h3><ol class="steps"><li>Tap the <b>Share</b> button (square with an arrow) at the bottom.</li><li>Scroll and tap <b>Add to Home Screen</b>.</li><li>Tap <b>Add</b>. Open it from your Home Screen from now on.</li></ol>';
-    h += '<h3 style="margin-top:12px">🤖 Android (Chrome)</h3><ol class="steps"><li>Tap the <b>⋮</b> menu at the top right.</li><li>Tap <b>Install app</b> or <b>Add to Home screen</b>.</li><li>Tap <b>Install</b>. Open it from your Home Screen from now on.</li></ol></section>';
+    h += gpsCard() + a2hsCard();
     return h;
   }
 
@@ -366,16 +516,17 @@
     var app = $('app'); if (!app) return;
     header();
     var h;
-    if (!JOB) h = screenNoJob();
+    if (!JOB) h = TOKEN ? screenConnect() : screenNoJob();
     else if (ST.stage === 'offered') h = screenOffer();
     else if (ST.stage === 'passed') h = screenPassed();
     else if (ST.stage === 'done') h = screenDone();
     else h = screenRail();
-    app.innerHTML = h;
+    app.innerHTML = shiftCard() + h;
     if (!app._bound) { app._bound = true; bind(app); }
     renderGps();
-    if (JOB && ST.share && gps.watch == null && onJob()) gpsStart();
-    if (JOB && !onJob() && gps.watch != null && ST.stage !== 'done') gpsStop(false);
+    // decision 7: the watch follows the shift — on shift + consent ⇒ running; off shift ⇒ stopped
+    if (onShift() && consentAt() && gps.watch == null && !gps.denied) gpsStart();
+    if (!onShift() && gps.watch != null) gpsStop();
     if (installEvt) { var r = $('installRow'); if (r) r.classList.remove('hidden'); }
     try { window.scrollTo(0, 0); } catch (e) {}
   }
@@ -390,8 +541,17 @@
         setStage(to, false);
         if (isLink) toast(to === 'passed' ? 'Opening Messages — send "N #' + JOB.no + '" to dispatch.' : 'Opening Messages — press send.');
         // let the sms: link open; the page state is already saved
-      } else if (act === 'gpson') { gpsStart(); }
-      else if (act === 'gpsoff') { gpsStop(true); }
+      } else if (act === 'gpson') { gps.denied = false; gpsStart(); }
+      else if (act === 'gpsoff') { gpsStop(); }
+      else if (act === 'shifton') { setShift(true, 'On shift — location is shared while you work.'); }
+      else if (act === 'shiftoff') { setShift(false, 'Off shift — location sharing stopped.'); }
+      else if (act === 'consent') {
+        giveConsent();
+        var ctx = el.getAttribute('data-ctx');
+        if (ctx === 'connect' && TOKEN) { completeConnect(); }
+        else { toast('Thanks — saved on this phone.'); if (onShift()) gpsStart(); render(); }
+      }
+      else if (act === 'connect') { completeConnect(); }
       else if (act === 'sendloc') { if (!gps.last) { ev.preventDefault(); toast('No GPS fix yet.', true); return; } toast('Opening Messages — send your location to dispatch.'); }
       else if (act === 'summary') { ST.summarySent = new Date().toISOString(); saveState(); toast('Opening Messages — press send.'); }
       else if (act === 'clear') { clearJob(); }
@@ -400,12 +560,19 @@
     });
     root.addEventListener('input', function (ev) {
       var id = ev.target && ev.target.id;
+      if (id === 'inShift') { setShift(!!ev.target.checked, ev.target.checked ? 'On shift — location is shared while you work.' : 'Off shift — location sharing stopped.'); return; }
+      if (!ST) return;
       if (id === 'inTolls') ST.tolls = ev.target.value === '' ? null : Number(ev.target.value);
       else if (id === 'inWait') ST.wait = ev.target.value === '' ? null : Number(ev.target.value);
       else if (id === 'inStops') ST.stops = ev.target.value === '' ? null : Number(ev.target.value);
       else if (id === 'inCash') ST.cash = !!ev.target.checked;
       else return;
       saveState(); refreshSummary();
+    });
+    // some browsers fire only 'change' for checkboxes
+    root.addEventListener('change', function (ev) {
+      var id = ev.target && ev.target.id;
+      if (id === 'inShift' && !!ev.target.checked !== onShift()) setShift(!!ev.target.checked, ev.target.checked ? 'On shift — location is shared while you work.' : 'Off shift — location sharing stopped.');
     });
   }
   function refreshSummary() {
@@ -416,12 +583,11 @@
   }
   function clearJob() {
     if (!JOB) return;
-    gpsStop(true);
     ls(KEY, null);
     var last = ls(LS_LAST); if (last && last.no === JOB.no) ls(LS_LAST, null);
     JOB = null; KEY = ''; ST = null;
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { try { location.hash = ''; } catch (e2) {} }
-    wake(); render(); toast('Job cleared.');
+    wake(); render(); toast('Job cleared.' + (onShift() ? ' You are still On shift.' : ''));
   }
 
   /* ---------- boot ---------- */
@@ -431,6 +597,8 @@
   window.addEventListener('online', netChip); window.addEventListener('offline', netChip);
 
   function init() {
+    loadShift();
+    TOKEN = readTokenFromUrl();
     JOB = readJobFromUrl();
     if (JOB) {
       KEY = jobKey(JOB); ST = loadState();
@@ -439,7 +607,7 @@
     } else { KEY = ''; ST = null; }
     netChip(); render(); wake();
   }
-  window.addEventListener('hashchange', function () { gpsStop(false); init(); });
+  window.addEventListener('hashchange', function () { init(); });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
@@ -455,8 +623,11 @@
     encode: function (obj) { return b64uEncode(JSON.stringify(obj)); },
     decode: function (s) { return JSON.parse(b64uDecode(s)); },
     smsHref: smsHref, normalizePhone: normalizePhone,
-    codeHref: codeHref, summaryBody: summaryBody,
-    gps: { start: gpsStart, stop: gpsStop, last: function () { return gps.last; }, error: function () { return gps.err; } },
+    codeHref: codeHref, summaryBody: summaryBody, locText: locText,
+    gps: { start: gpsStart, stop: gpsStop, last: function () { return gps.last; }, error: function () { return gps.err; }, running: function () { return gps.watch != null; } },
+    consent: { text: CONSENT_TEXT, at: consentAt, agree: giveConsent, revoke: function () { ls(LS_CONSENT, null); setShift(false); render(); } },
+    shift: { on: onShift, set: function (on) { return setShift(on, on ? 'On shift.' : 'Off shift.'); } },
+    connect: { token: function () { return TOKEN; }, complete: completeConnect, info: connected, functionsUrl: functionsUrl },
     render: render, clear: clearJob, reload: init,
     maps: { google: gmaps, apple: amaps, waze: waze }
   };

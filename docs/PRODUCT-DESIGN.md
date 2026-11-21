@@ -510,20 +510,22 @@ Assumes one region, 10–15 drivers, ~2,000 trips/month, USD.
 
 ### Decisions needed from the owner
 
-1. **The business phone number:** which number should texts come from, and is it a landline/VoIP line (Hosted SMS, voice stays put) or can it be ported to Twilio (voice forwarded, caller-ID screen-pop becomes automatic)? Who signs the Letter of Authorization and can supply a recent bill and the business EIN for 10DLC?
-2. **Domain:** which domain for `app.`, `go.` (links in texts), `book.` and `track.`? (Short links in texts must be on your own domain.)
-3. **Square:** use the existing Square account; do you want an in-car reader ($49–299)? Which driver-payout method: bank ACH/CSV, Square Payroll, or Gusto/Melio?
-4. **Automatic gratuity** for account rides (percent, which accounts) and the **no-show fee** rule.
-5. **Hold at booking:** OK to hold estimate + 20% on passengers' cards, or hold the estimate only?
-6. **Who is a dispatcher, who is the owner (admin PIN), and should drivers see fares on offers?**
-7. **Driver tracking policy:** On-shift-only tracking (recommended) and 30-day raw retention — agree? Written consent text for drivers.
-8. **Passenger consent wording** on phone bookings ("By booking you agree to receive ride updates by text; reply STOP to opt out") — dispatchers must say it or it must be on the website/widget.
-9. **Store app (Phase 7):** publish under the business's own Apple Developer and Google Play accounts (needs the owner to open them) or under the developer's?
-10. **Region plan:** NYC only for now, or is a second region (which city) wanted within the year? This decides when Phase 5's region work is prioritized.
-11. **Simple mode default:** Simple mode on for everyone with Expert mode behind the PIN (recommended), or Expert mode on for the owner's station?
-12. **Flight data provider:** AeroDataBox (cheaper) vs FlightAware (more accurate, pricier).
-13. **AI assistant and affiliate farm-out:** wanted in Phase 8 or parked?
-14. **Budget sign-off:** ~$200–400/month running cost and ~20 weeks of development.
+All 14 were decided on the recommended defaults on 2026-11-21; the accepted value and the code hook for each are in `docs/OWNER-DECISIONS.md`. The original questions are kept below for the record.
+
+1. **The business phone number:** *Decided (defaults accepted 2026-11-21) — keep the existing number, Twilio Hosted SMS, interim toll-free "Skyway text line".* Which number should texts come from, and is it a landline/VoIP line (Hosted SMS, voice stays put) or can it be ported to Twilio (voice forwarded, caller-ID screen-pop becomes automatic)? Who signs the Letter of Authorization and can supply a recent bill and the business EIN for 10DLC?
+2. **Domain:** *Decided (defaults accepted 2026-11-21) — one owned domain, `app.` + `go.` on Cloudflare Pages; `_redirects` in the repo.* Which domain for `app.`, `go.` (links in texts), `book.` and `track.`? (Short links in texts must be on your own domain.)
+3. **Square:** *Decided (defaults accepted 2026-11-21) — existing account, sandbox + production app, no reader for the pilot, payouts by ACH/CSV (`settlements.method = 'ach_csv'`).* Use the existing Square account; do you want an in-car reader ($49–299)? Which driver-payout method: bank ACH/CSV, Square Payroll, or Gusto/Melio?
+4. **Automatic gratuity** for account rides (percent, which accounts) and the **no-show fee** rule. *Decided (defaults accepted 2026-11-21) — 0 % gratuity (`settings.autoGratuityPct`, per-account override); no-show fee = base fare, card on file, dispatcher button only.*
+5. **Hold at booking:** *Decided (defaults accepted 2026-11-21) — estimate + 20 % (`HOLD_FACTOR` 1.2 / `settings.holdFactor`), auto-released at capture.* OK to hold estimate + 20% on passengers' cards, or hold the estimate only?
+6. **Who is a dispatcher, who is the owner (admin PIN), and should drivers see fares on offers?** *Decided (defaults accepted 2026-11-21) — owner holds the PIN and Expert mode, everyone else is a dispatcher; drivers see the fare except on Account rides ("Account — no cash", `{fareOrAccount}`).*
+7. **Driver tracking policy:** *Decided (defaults accepted 2026-11-21) — On-shift-only, 30-day raw retention then daily summaries; consent text as in `OWNER-DECISIONS.md` item 7.* On-shift-only tracking (recommended) and 30-day raw retention — agree? Written consent text for drivers.
+8. **Passenger consent wording** on phone bookings ("By booking you agree to receive ride updates by text; reply STOP to opt out") — dispatchers must say it or it must be on the website/widget. *Decided (defaults accepted 2026-11-21) — that exact sentence, on the cheat sheet, under the `booked` template and on `book.html` when built.*
+9. **Store app (Phase 7):** *Decided (defaults accepted 2026-11-21) — the business's own Apple Developer and Google Play accounts.* Publish under the business's own Apple Developer and Google Play accounts (needs the owner to open them) or under the developer's?
+10. **Region plan:** *Decided (defaults accepted 2026-11-21) — NYC only; `region.js` DEFAULTS = New York; second region is a Settings task later.* NYC only for now, or is a second region (which city) wanted within the year? This decides when Phase 5's region work is prioritized.
+11. **Simple mode default:** *Decided (defaults accepted 2026-11-21) — Simple mode for all stations (`settings.simpleMode = true`); Expert mode behind the owner PIN.* Simple mode on for everyone with Expert mode behind the PIN (recommended), or Expert mode on for the owner's station?
+12. **Flight data provider:** *Decided (defaults accepted 2026-11-21) — AeroDataBox for the pilot (`settings.flightProvider = 'aerodatabox'`); FlightAware if airport updates run late.* AeroDataBox (cheaper) vs FlightAware (more accurate, pricier).
+13. **AI assistant and affiliate farm-out:** *Decided (defaults accepted 2026-11-21) — parked; revisit after launch.* Wanted in Phase 8 or parked?
+14. **Budget sign-off:** *Decided (defaults accepted 2026-11-21) — Phases 0–4 approved now (~11 weeks); Phases 5–8 after the Phase 4 review; ~$200–400/month.* ~$200–400/month running cost and ~20 weeks of development.
 
 ---
 

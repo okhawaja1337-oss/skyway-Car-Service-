@@ -48,7 +48,12 @@ async function sendOffer(locId: string, tripId: string, rank: number, driverId: 
   const to = toE164(driver?.phone_e164 || (driver?.body.phone as string), loc.phone_cc || "+1");
   const base = publicBaseUrl();
   const vars = tripVars({ trip: trip.body, location: loc, settings: ((settingsRow as { body: Json } | null)?.body) || {}, driver: driver?.body || null, extra: { jobUrl: base ? `${base}/j/${token}` : "", offerSeconds: seconds } });
-  // TODO(owner decision 6): hide the fare from drivers on offers → vars.fareOrAccount = "see dispatcher"
+  // Owner decision 6 (default): drivers DO see the fare on offers.  tripVars() fills {fareOrAccount} with
+  // "$58.00 + tolls" for Cash/Card rides and "Account — no cash" for Account rides; the check below also
+  // catches a trip that carries an account but whose payType is missing or spelled differently, so an
+  // account ride never reads as a cash fare on the driver's phone.
+  const payType = String(trip.pay_type || trip.body.payType || "");
+  if (trip.account_id || trip.body.accountId || /account/i.test(payType)) vars.fareOrAccount = "Account — no cash";
   if (to) {
     try {
       const sms = await sendSms({ to, body: render(templates.driverJob, vars), messagingServiceSid: loc.twilio_messaging_sid || undefined, statusCallback: `${functionsBaseUrl()}/sms-status` });

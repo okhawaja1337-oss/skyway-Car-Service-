@@ -32,7 +32,11 @@
   function saveNow() { if (typeof window.saveNow === 'function') { try { window.saveNow(); return; } catch (e) {} } save(); }
   function act(fn) { return function (e) { try { return fn(e); } catch (err) { try { console.error('[region]', err); } catch (e2) {} } }; }
 
+  /* Owner decision 10: NYC only for the pilot (a second region is a Settings task later; schema carries location_id). */
   var DEFAULTS = { name: 'New York', country: 'US', tz: 'America/New_York', currency: 'USD', locale: 'en-US', units: 'mi', phoneCC: '+1', mapCenter: { lat: 40.737, lng: -73.79 } };
+  /* Owner decision 12: AeroDataBox for the pilot; the Phase 6 flight-poll function reads this (switch to 'flightaware' if airport pickups show late/missing updates). */
+  var FLIGHT_PROVIDER_DEFAULT = 'aerodatabox';
+  var FLIGHT_PROVIDER_LABELS = { aerodatabox: 'AeroDataBox', flightaware: 'FlightAware AeroAPI' };
 
   /* code, name, phone CC, currency, locale, default tz, units */
   var COUNTRIES = [
@@ -72,6 +76,13 @@
     if (changed) save();
     return r;
   }
+  /* settings.flightProvider: seeded once (save() only when it was missing); read by the Phase 6 flight-poll function */
+  function flightProvider() {
+    if (!STATE.settings || typeof STATE.settings !== 'object') STATE.settings = {};
+    if (STATE.settings.flightProvider === undefined) { STATE.settings.flightProvider = FLIGHT_PROVIDER_DEFAULT; save(); }
+    return String(STATE.settings.flightProvider || FLIGHT_PROVIDER_DEFAULT);
+  }
+  function flightProviderLabel() { var p = flightProvider(); return FLIGHT_PROVIDER_LABELS[p] || p; }
   function get() { var r = region(); return { name: r.name, country: r.country, tz: r.tz, currency: r.currency, locale: r.locale, units: r.units, phoneCC: r.phoneCC, mapCenter: { lat: Number(r.mapCenter.lat), lng: Number(r.mapCenter.lng) } }; }
 
   /* ---------- money override ---------- */
@@ -206,6 +217,7 @@
     h += '<label class="fld"><span class="lbl">&nbsp;</span><button class="btn btn-navy" type="button" id="rg_geo">&#128205; Use my location</button></label>';
     h += '</div>';
     h += '<div class="notice rg-note"><b>What stays New York only:</b> the NYC TLC meter (the Estimate tab\'s TLC rates) and the TLC trip-record export are built for New York City and keep working as they are. <b>Zone, flat-rate and distance pricing work anywhere</b> &mdash; draw zones on the Zone Map or set per-' + esc(unitLabel()) + ' rates on the Pricing tab.</div>';
+    h += '<div class="hint" id="rg_flight" style="margin-top:8px;">Flight data: ' + esc(flightProviderLabel()) + ' (Phase 6)</div>';
     h += '<div class="rg-extra" id="rg_extra"></div>';
     h += '<div class="btn-row" style="margin-top:10px;"><button class="btn btn-go" type="button" id="rg_save">Save region</button><button class="btn btn-ghost" type="button" id="rg_reset">Back to New York defaults</button></div>';
     h += '<div class="hint" id="rg_status" style="margin-top:6px;"></div>';
@@ -278,12 +290,13 @@
   window.Region = {
     get: get, set: set, defaults: JSON.parse(JSON.stringify(DEFAULTS)), countries: COUNTRIES.map(function (c) { return { code: c[0], name: c[1], phoneCC: c[2], currency: c[3], locale: c[4], tz: c[5], units: c[6] }; }),
     fmtPhone: fmtPhone, unitLabel: unitLabel, toUnits: toUnits, fmtTime: fmtTime, tzNow: tzNow,
-    money: money, render: render
+    money: money, render: render, flightProvider: flightProvider
   };
 
   /* ---------- boot ---------- */
   function boot() {
     try { region(); } catch (e) {}
+    try { flightProvider(); } catch (e) {}
     if (POPOUT) return;
     try { hookRenderSettings(); } catch (e) {}
     try { render(); } catch (e) {}

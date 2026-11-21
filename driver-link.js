@@ -159,6 +159,67 @@
     return true;
   }
 
+  /* ---------- driver location + shift (owner decision 7: on-shift-only tracking, consent recorded) ----------
+     The phone page (driver.js) shares GPS only while the driver is On shift and only after tapping "I agree"
+     under CONSENT_TEXT. Whatever path a pin takes into the console (cloud pull, a pasted "L #12 40.7,-73.9 …
+     consent:<ISO>" text, a test), ingestLocation() is the one place that writes d.curLoc (source 'gps'),
+     flips d.onShift on and records d.consentAt the first time the payload carries consent. */
+  var CONSENT_TEXT = "Skyway tracks this phone's location only while you are On shift, to dispatch jobs and show passengers their ETA. Raw location data is kept 30 days.";
+  function pad2(n) { return ('0' + n).slice(-2); }
+  function whenStamp(at) {
+    var d = at == null || at === '' ? new Date() : new Date(at); if (isNaN(d)) d = new Date();
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  }
+  function repaintDrivers() {
+    try { if (typeof window.renderDriverStatus === 'function') window.renderDriverStatus(); } catch (e) {}
+    try { if (typeof window.renderOptimizer === 'function' && byId('view-optimizer') && byId('view-optimizer').classList.contains('active')) window.renderOptimizer(); } catch (e) {}
+  }
+  function ingestLocation(driverId, p) {
+    var d = findDriver(driverId); if (!d || !p || typeof p !== 'object') return null;
+    var lat = Number(p.lat), lng = Number(p.lng);
+    if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+    var when = whenStamp(p.at), cur = d.curLoc || {};
+    var consent = p.consentAt || (p.consent === true ? new Date().toISOString() : '');
+    if (consent && !d.consentAt) d.consentAt = String(consent);        // first consent on record wins
+    if (d.onShift !== true || !d.shiftAt) d.shiftAt = new Date().toISOString();   // a live gps pin means the phone is On shift
+    d.onShift = true;
+    // an older point (offline replay) never overrides a newer pin, manual or gps — same rule as schema.sql
+    if (cur.when && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(String(cur.when)) && String(cur.when) > when) { doSave(); repaintDrivers(); return d; }
+    var near = cur.lat != null && cur.lng != null && Math.abs(Number(cur.lat) - lat) < 0.00045 && Math.abs(Number(cur.lng) - lng) < 0.0006;
+    var acc = p.accuracy != null ? p.accuracy : p.acc;
+    d.curLoc = {
+      addr: (near && cur.addr) || String(p.addr || '') || (lat.toFixed(5) + ', ' + lng.toFixed(5)),
+      when: when, lat: lat, lng: lng, source: 'gps',
+      heading: p.heading != null && isFinite(Number(p.heading)) ? Number(p.heading) : null,
+      speed: p.speed != null && isFinite(Number(p.speed)) ? Number(p.speed) : null,
+      accuracy: acc != null && isFinite(Number(acc)) ? Number(acc) : null
+    };
+    doSave(); repaintDrivers();
+    return d;
+  }
+  /* "L #12 40.71234,-73.98765 https://maps.google.com/?q=… consent:2026-01-31T14:02:11.000Z" → {no, lat, lng, consentAt} */
+  function parseLocationText(txt) {
+    var s = String(txt || '');
+    var m = s.match(/\bL\b\s*(?:#\s*(\d+))?\s+(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/i);
+    if (!m) return null;
+    var c = s.match(/consent[:\s]+(\d{4}-\d{2}-\d{2}T[0-9:.]+Z?)/i);
+    return { no: m[1] || '', lat: Number(m[2]), lng: Number(m[3]), consentAt: c ? c[1] : '' };
+  }
+  function ingestLocationText(driverId, txt) {
+    var p = parseLocationText(txt); if (!p) return null;
+    return ingestLocation(driverId, { lat: p.lat, lng: p.lng, consentAt: p.consentAt });
+  }
+  /* Console marks a driver On/Off shift (no UI here — index.html's Driver status row is not rendered by this file). */
+  function setShift(driverId, on) {
+    var d = findDriver(driverId); if (!d) return false;
+    on = !!on;
+    if (!!d.onShift === on && d.shiftAt) return true;
+    d.onShift = on; d.shiftAt = new Date().toISOString();
+    doSave(); repaintDrivers();
+    say((d.name || 'Driver') + (on ? ' is On shift.' : ' is Off shift — phone tracking paused; the last pin stays on the board.'));
+    return true;
+  }
+
   /* ---------- board integration: "📲 Send job" in the actions cell ---------- */
   function btnHtml(t) {
     var d = findDriver(t.driverId);
@@ -195,7 +256,10 @@
     _loaded: true,
     buildJobUrl: buildJobUrl, jobPayload: jobPayload, decodeJobUrl: decodeJobUrl,
     jobText: jobText, sendJobToDriver: sendJobToDriver, copyJobUrl: copyJobUrl,
-    smsHref: smsHref, encode: function (o) { return b64uEncode(JSON.stringify(o)); }
+    smsHref: smsHref, encode: function (o) { return b64uEncode(JSON.stringify(o)); },
+    // owner decision 7
+    CONSENT_TEXT: CONSENT_TEXT, ingestLocation: ingestLocation, ingestLocationText: ingestLocationText,
+    parseLocationText: parseLocationText, setShift: setShift
   };
 
   function boot() {

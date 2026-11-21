@@ -92,7 +92,9 @@
   function clone(o) { try { return JSON.parse(JSON.stringify(o)); } catch (e) { return o; } }
 
   /* ---------- settings ---------- */
-  var DEFAULTS = { url: '', anonKey: '', locationId: '', enabled: false };
+  /* publicBaseUrl: owner decision 2 — one owned domain, go.<domain> for short links in texts (the Edge Functions
+     read the PUBLIC_BASE_URL secret; this copy is only shown as a hint in the Cloud card, see docs/SETUP.md §1). */
+  var DEFAULTS = { url: '', anonKey: '', locationId: '', enabled: false, publicBaseUrl: '' };
   function cloud() {
     var s = state(); if (!s) return clone(DEFAULTS);
     if (!s.settings || typeof s.settings !== 'object') s.settings = {};
@@ -101,9 +103,11 @@
     if (typeof c.url !== 'string') c.url = '';
     if (typeof c.anonKey !== 'string') c.anonKey = '';
     if (typeof c.locationId !== 'string') c.locationId = '';
+    if (typeof c.publicBaseUrl !== 'string') c.publicBaseUrl = '';
     c.enabled = c.enabled === true;
     return c;
   }
+  function publicBaseUrl() { return String(cloud().publicBaseUrl || '').trim().replace(/\/+$/, ''); }
   function baseUrl() { return String(cloud().url || '').trim().replace(/\/+$/, ''); }
   function configured() { var c = cloud(); return !!(baseUrl() && String(c.anonKey || '').trim() && String(c.locationId || '').trim()); }
   function enabled() { return cloud().enabled === true && configured(); }
@@ -544,6 +548,7 @@
     h += '<label class="fld"><span class="lbl">Location id</span><input type="text" id="cl_loc" value="' + esc(c.locationId) + '" placeholder="nyc" autocomplete="off" spellcheck="false"></label>';
     h += '<label class="fld cl-chk"><input type="checkbox" id="cl_enabled"' + (c.enabled ? ' checked' : '') + '><span class="lbl" style="margin:0;font-weight:600;">Enable cloud sync</span></label>';
     h += '</div>';
+    h += '<div class="hint" id="cl_links" style="margin-top:4px;">Short links use: ' + (publicBaseUrl() ? '<span class="mono">' + esc(publicBaseUrl()) + '</span>' : 'not set &mdash; see <span class="mono">docs/SETUP.md &sect;1</span>') + '</div>';
     h += '<div class="btn-row" style="margin-top:6px;"><button class="btn btn-go" type="button" id="cl_save">Save cloud settings</button><button class="btn btn-navy" type="button" id="cl_test">Test connection</button><button class="btn btn-navy" type="button" id="cl_upload">Upload everything now</button><button class="btn btn-ghost" type="button" id="cl_flush">Retry upload</button></div>';
     h += '<div class="hint" id="cl_msg" style="margin-top:6px;"></div>';
     h += '<div class="cl-progress" id="cl_prog" hidden><i id="cl_progbar"></i></div>';
@@ -619,13 +624,14 @@
   }
 
   /* ---------- set / get ---------- */
-  function get() { var c = cloud(); return { url: c.url, anonKey: c.anonKey, locationId: c.locationId, enabled: c.enabled }; }
+  function get() { var c = cloud(); return { url: c.url, anonKey: c.anonKey, locationId: c.locationId, enabled: c.enabled, publicBaseUrl: c.publicBaseUrl }; }
   function set(patch) {
     var c = cloud(); patch = patch || {};
     var before = enabled(), locBefore = locId();
     if (patch.url !== undefined) c.url = String(patch.url || '').trim();
     if (patch.anonKey !== undefined) c.anonKey = String(patch.anonKey || '').trim();
     if (patch.locationId !== undefined) c.locationId = String(patch.locationId || '').trim();
+    if (patch.publicBaseUrl !== undefined) c.publicBaseUrl = String(patch.publicBaseUrl || '').trim().replace(/\/+$/, '');
     if (patch.enabled !== undefined) c.enabled = patch.enabled === true;
     if (locId() !== locBefore) { snapReset(); cursorReset(); queueClear(); }
     try { if (typeof window.save === 'function') window.save(); } catch (e) {}
@@ -646,7 +652,7 @@
     get: get, set: set, enabled: enabled, configured: configured, status: function () { return { state: STATUS.state, text: STATUS.text, pending: queueLoad().length, lastOk: STATUS.lastOk, lastErr: STATUS.lastErr }; },
     test: test, uploadAll: uploadAll, flush: flush, pull: pull, diffNow: diffNow,
     queue: function () { return queueLoad().slice(); }, queueSize: function () { return queueLoad().length; },
-    snapshotReset: function () { snapReset(); cursorReset(); }, fn: fn, render: render, start: start, stop: stop,
+    snapshotReset: function () { snapReset(); cursorReset(); }, fn: fn, render: render, start: start, stop: stop, publicBaseUrl: publicBaseUrl,
     localCounts: localCounts, localFaresByMonth: localFaresByMonth, rowFor: rowFor, hashOf: hashOf,
     tables: TABLES.slice(), configKeys: CONFIG_KEYS.slice(), debug: false, version: '1.0.0'
   };

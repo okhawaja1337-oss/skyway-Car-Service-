@@ -291,10 +291,20 @@ create table if not exists settlements (
   location_id text not null,
   driver_id text, period_start date, period_end date,
   gross numeric(12,2), commission numeric(12,2), tolls numeric(12,2), cash_collected numeric(12,2),
-  tips numeric(12,2), net numeric(12,2), paid_at timestamptz, method text, export_url text,
+  tips numeric(12,2), net numeric(12,2), paid_at timestamptz,
+  method text not null default 'ach_csv',      -- owner decision 3: driver payouts by bank ACH / CSV export (pilot); no card reader
+  export_url text,
   created_at timestamptz default now(), updated_at timestamptz default now(),
   rev bigint default 0, deleted_at timestamptz, body jsonb not null default '{}'::jsonb
 );
+-- Owner decision 3 (payout method) applied to databases created before the default existed.
+-- Idempotent: the default/backfill are no-ops on re-run and the check constraint is dropped first.
+alter table if exists settlements alter column method set default 'ach_csv';
+update settlements set method = 'ach_csv' where method is null;
+alter table if exists settlements alter column method set not null;
+alter table if exists settlements drop constraint if exists settlements_method_check;
+alter table if exists settlements add constraint settlements_method_check
+  check (method in ('ach_csv', 'square_payroll', 'gusto', 'melio', 'cash', 'other'));
 
 create table if not exists messages (
   id text primary key default gen_random_uuid()::text,

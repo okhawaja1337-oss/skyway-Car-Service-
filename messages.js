@@ -130,9 +130,14 @@
     { key: 'reminder', who: 'passenger', label: 'Passenger — reminder', when: 'The evening before a ride booked well ahead.' },
     { key: 'canceled', who: 'passenger', label: 'Passenger — canceled', when: 'When a ride is canceled.' }
   ];
+  /* Owner decision 8 (default): the consent sentence dispatchers say on every phone booking.  Printed on the
+     cheat sheet (simple.js), shown under the "booked" template below, and shown on book.html once it exists. */
+  var CONSENT_SENTENCE = 'By booking you agree to receive ride updates by text; reply STOP to opt out.';
   var DEFAULTS = {
-    driverJob: '{BIZ} JOB #{no} — {when}. PU: {pu}. DO: {do}.{stopsNote} {passenger}, {pax} pax, {vtype}. {fare} + tolls. {payType}.{notesNote} Reply Y to accept, N to pass.',
-    booked: '{biz}: Your ride is booked for {when}. Pickup: {pu} → {do}. Est. {fare} + tolls. Conf #{no}. Reply C to cancel or call {phone}.',
+    /* Owner decision 6 (default): drivers DO see the fare on offers; Account rides show "Account — no cash" ({fareOrAccount}). */
+    driverJob: '{BIZ} JOB #{no} — {when}. PU: {pu}. DO: {do}.{stopsNote} {passenger}, {pax} pax, {vtype}. {fareOrAccount}. {payType}.{notesNote} Reply Y to accept, N to pass.',
+    /* Owner decision 8 (default): the booking confirmation ends with the short opt-out line. */
+    booked: '{biz}: Your ride is booked for {when}. Pickup: {pu} → {do}. Est. {fare} + tolls. Conf #{no}. Reply C to cancel or call {phone}. Reply STOP to opt out.',
     assigned: 'Your {biz} driver is {driver} in a {vehicle}{plateNote}{carNote}. Conf #{no}. Questions? Call {phone}.',
     onTheWay: '{driverFirst} is on the way to {pu}{carNote} ({vehicle}{plateNote}). Conf #{no}.',
     arrived: '{driverFirst} has arrived at {pu}{carNote} ({vehicle}{plateNote}). Please come out when ready.',
@@ -170,6 +175,8 @@
       passenger: t.passenger || 'Passenger', passengerFirst: firstName(t.passenger) || 'there', paxPhone: t.phone || '',
       pax: String(Number(t.pax) || 1), vtype: t.vtype || 'any car',
       fare: money(fare), tolls: money(tolls), tip: money(tip), total: money(fare + tolls + tip),
+      /* decision 6: same wording as driver.js fareLine() and the server's {fareOrAccount} */
+      fareOrAccount: t.payType === 'Account' ? 'Account — no cash' : money(fare) + ' + tolls',
       tollsNote: tolls > 0 ? ' (incl. ' + money(tolls) + ' tolls)' : '',
       payType: t.payType === 'Account' && acct ? 'Account: ' + acct : (t.payType || 'Cash'), account: acct,
       notes: t.notes || '', notesNote: t.notes ? ' Notes: ' + String(t.notes).trim() + '.' : '',
@@ -410,7 +417,7 @@
     ['{when}', 'Today 3:40 PM / Tue Nov 18, 3:40 PM'], ['{date}', 'Tue Nov 18'], ['{time}', '3:40 PM'], ['{dayWord}', 'today / tomorrow / on Tue Nov 18'],
     ['{pu}', 'pickup (short)'], ['{do}', 'drop-off (short)'], ['{puFull}', 'pickup, full'], ['{doFull}', 'drop-off, full'], ['{stopsNote}', '" Stops: …" or blank'],
     ['{passenger}', 'passenger'], ['{passengerFirst}', 'first name'], ['{paxPhone}', 'passenger phone'], ['{pax}', 'party size'], ['{vtype}', 'vehicle type'],
-    ['{fare}', '$58.00'], ['{tolls}', 'tolls'], ['{tip}', 'tip'], ['{total}', 'fare+tolls+tip'], ['{tollsNote}', '" (incl. $5.50 tolls)" or blank'], ['{payType}', 'Cash / Credit Card / Account: name'],
+    ['{fare}', '$58.00'], ['{fareOrAccount}', '"$58.00 + tolls", or "Account — no cash" on Account rides'], ['{tolls}', 'tolls'], ['{tip}', 'tip'], ['{total}', 'fare+tolls+tip'], ['{tollsNote}', '" (incl. $5.50 tolls)" or blank'], ['{payType}', 'Cash / Credit Card / Account: name'],
     ['{notes}', 'notes'], ['{notesNote}', '" Notes: …" or blank'],
     ['{driver}', 'driver name'], ['{driverFirst}', 'driver first name'], ['{driverPhone}', 'driver phone'], ['{car}', 'Car 89'], ['{carNote}', '" in Car 89" or blank'],
     ['{vehicle}', 'black Toyota Camry'], ['{plate}', 'plate'], ['{plateNote}', '", plate T123456C" or blank']
@@ -434,7 +441,9 @@
     h += '<div class="grid2">';
     TEMPLATE_META.forEach(function (m) {
       var custom = typeof user[m.key] === 'string' && user[m.key].trim() && user[m.key] !== DEFAULTS[m.key];
-      h += '<div class="msg-tpl"><label class="fld"><span class="lbl">' + esc(m.label) + (custom ? ' <span style="color:#1f7a3d;">(customized)</span>' : '') + '</span><textarea id="msg_tpl_' + m.key + '" data-key="' + m.key + '" rows="3" spellcheck="true">' + esc(tps[m.key]) + '</textarea></label><div class="hint" style="margin:2px 0 0;">' + esc(m.when) + '</div></div>';
+      h += '<div class="msg-tpl"><label class="fld"><span class="lbl">' + esc(m.label) + (custom ? ' <span style="color:#1f7a3d;">(customized)</span>' : '') + '</span><textarea id="msg_tpl_' + m.key + '" data-key="' + m.key + '" rows="3" spellcheck="true">' + esc(tps[m.key]) + '</textarea></label><div class="hint" style="margin:2px 0 0;">' + esc(m.when) + '</div>'
+        + (m.key === 'booked' ? '<div class="hint msg-consent" style="margin:4px 0 0;"><b>Say this on the phone:</b> “' + esc(CONSENT_SENTENCE) + '” <span style="opacity:.75;">(also printed on the cheat sheet; keep the “Reply STOP to opt out” line in the text above)</span></div>' : '')
+        + '</div>';
     });
     h += '</div>';
     h += '<div class="btn-row" style="margin-top:4px;"><button class="btn btn-go" type="button" id="msg_tpl_save">Save templates</button><button class="btn btn-ghost" type="button" id="msg_tpl_reset">Reset to defaults</button><button class="btn btn-navy" type="button" id="msg_tpl_preview">Preview with a real trip</button></div>';
@@ -471,7 +480,7 @@
 
   /* ---------- public API ---------- */
   window.Messages = {
-    templates: templates, defaults: DEFAULTS, meta: TEMPLATE_META, labels: LABELS,
+    templates: templates, defaults: DEFAULTS, meta: TEMPLATE_META, labels: LABELS, consentSentence: CONSENT_SENTENCE,
     vars: tripVars, render: render, fill: fill,
     smsHref: smsHref, normalizePhone: normalizePhone,
     textDriver: textDriver, textDriverTo: textDriverTo, textPassenger: textPassenger, copyJob: copyJob, copyText: copyText,

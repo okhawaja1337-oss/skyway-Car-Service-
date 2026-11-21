@@ -95,7 +95,28 @@ from the original console was removed:
 | `supabase/` | The backend: `schema.sql` (tables, row-level security, driver guards, sequences) and Edge Functions for SMS in/out, job offers, Square charges / links / invoices / webhooks, geocoding and routing. |
 | `docs/PRODUCT-DESIGN.md` | The full LimoGrid-based product design, roadmap and costs. |
 | `docs/SETUP.md` | Plain-English owner guide: Cloudflare Pages, Supabase, Twilio (business number), Square, Google Cloud, and how to switch each on — and off. |
-| `docs/OWNER-DECISIONS.md` | The 14 decisions only the owner can make, each with a recommended default. |
+| `docs/OWNER-DECISIONS.md` | The 14 decisions only the owner can make, each with a recommended default — all 14 decided on the defaults (2026-11-21). |
+
+### Owner decisions
+
+All 14 owner decisions were settled on the recommended defaults on 2026-11-21;
+`docs/OWNER-DECISIONS.md` lists each one with the value and the file that now
+carries it. The ones a dispatcher will notice:
+
+- **Simple mode is on for every station.** Expert mode is behind the owner's
+  4-digit admin PIN (Settings → Admin PIN); dispatchers never need it.
+- **Say this on every phone booking:** "By booking you agree to receive ride
+  updates by text; reply STOP to opt out." It is printed on the cheat sheet
+  (Settings → Print cheat sheet) and shown under the Booked text template.
+- **No automatic gratuity.** Card captures add 0 % unless an account has its
+  own gratuity percentage set.
+- **The no-show fee is a button, never automatic.** MONEY → No-shows →
+  **Charge no-show fee** charges the base fare, only when a card is on file.
+- **Drivers see the fare on job offers**, except Account rides, which read
+  "Account — no cash". Card rides hold the estimate + 20 % at booking and
+  release the difference when the final charge is smaller.
+- Texts come from the existing business number (Twilio Hosted SMS, calls
+  untouched); NYC is the only region; flight data (Phase 6) uses AeroDataBox.
 
 ### Fixes from the full audit (82 findings reviewed)
 

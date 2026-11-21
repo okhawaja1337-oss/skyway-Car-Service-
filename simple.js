@@ -450,6 +450,10 @@
   }
 
   /* ---------------- cheat sheet ---------------- */
+  /* Owner decision 8 (default): the passenger consent sentence every dispatcher says when taking a phone booking.
+     Same string as Messages.consentSentence (messages.js); the literal here is the fallback if that file is absent. */
+  var CONSENT_SENTENCE='By booking you agree to receive ride updates by text; reply STOP to opt out.';
+  function consentSentence(){try{if(window.Messages&&typeof window.Messages.consentSentence==='string'&&window.Messages.consentSentence)return window.Messages.consentSentence;}catch(e){}return CONSENT_SENTENCE;}
   function cheatSheetHTML(){
     var s=S(),name=s.name||'Skyway Car Service',phone=s.phone||'';
     var lead=Number(s.leadMins)||60;
@@ -459,6 +463,7 @@
       '.sub{color:#666;margin-bottom:10px;}ol,ul{margin:0 0 0 20px;padding:0;}li{margin:3px 0;}'+
       '.cols{display:grid;grid-template-columns:1fr 1fr;gap:0 28px;}table{border-collapse:collapse;width:100%;}td,th{border:1px solid #ccc;padding:4px 8px;text-align:left;vertical-align:top;}th{background:#f2f2f2;}'+
       'kbd{font-family:Consolas,monospace;background:#eee;border:1px solid #bbb;border-radius:3px;padding:0 5px;font-size:12px;}'+
+      '.say{font-weight:700;background:#fff6c4;padding:1px 4px;border-radius:3px;}.note{color:#666;font-size:12px;}'+
       '.btn{display:inline-block;background:#1c5b9c;color:#fff;border:none;padding:8px 16px;font-size:14px;cursor:pointer;border-radius:6px;margin-bottom:14px;}'+
       '@media print{.btn{display:none;}body{margin:12mm;}}</style></head><body>'+
       '<button class="btn" onclick="window.print()">Print this page</button>'+
@@ -475,6 +480,7 @@
       '<li>Press <kbd>F1</kbd>–<kbd>F6</kbd> for the ringing line (or <kbd>F2</kbd> New Trip). The caller’s number and last trips fill in.</li>'+
       '<li>Type the <b>pick-up</b> and <b>drop-off</b> — choose from the dropdown so the map and price fill in.</li>'+
       '<li>Set <b>when</b> (ASAP or a date/time), passengers and car type.</li>'+
+      '<li><b>Say to the caller:</b> <span class="say">“'+escH(consentSentence())+'”</span> <span class="note">(required for text updates — say it every time you book by phone)</span></li>'+
       '<li>Press <b>Save Trip</b>. The ride is on the board; it moves to <i>Active / Due Now</i> '+lead+' min before pickup.</li></ol>'+
       '<h2>Sending a driver</h2><ol>'+
       '<li>On the board row press <b>★ Best</b> — the best free driver is chosen (or pick one from the Driver box).</li>'+

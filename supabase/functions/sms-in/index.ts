@@ -15,13 +15,20 @@ import { loadTemplates, render } from "../_shared/templates.ts";
 const STAGE_CODES: Record<string, string> = { E: "enroute", A: "onloc", P: "pob", D: "done" };
 const STAGE_WORDS: Record<string, string> = { enroute: "on the way", onloc: "arrived", pob: "passenger on board", done: "completed" };
 
-async function locationForNumber(toE164: string): Promise<{ id: string; name: string | null; phone_cc: string | null } | null> {
+async function locationForNumber(to: string): Promise<{ id: string; name: string | null; phone_cc: string | null } | null> {
   // The business number that received the text identifies the location (one Messaging Service per region).
+  // Owner decision 1 (default): texts come from the EXISTING business number via Twilio Hosted SMS (voice
+  // untouched); until Hosted SMS + 10DLC are approved the verified toll-free "Skyway text line" is the sender.
+  // Either number is matched here: locations.body.sms_number (the Twilio sender, set in docs/SETUP.md §4.4
+  // step 6) or locations.body.phone_e164 (the voice line).  Falls back to the first location, so a
+  // single-region install works before sms_number is set.
   const db = admin();
   const { data } = await db.from("locations").select("id,name,phone_cc,body").is("deleted_at", null);
   const rows = (data || []) as { id: string; name: string | null; phone_cc: string | null; body: Json }[];
-  const hit = rows.find((l) => toE164 && (l.body.sms_number === toE164 || l.body.phone_e164 === toE164));
-  return hit || rows[0] || null;      // TODO(owner decision 1): set locations.body.sms_number once the number is live
+  const want = toE164(to);
+  const same = (v: unknown) => !!want && !!v && toE164(String(v)) === want;
+  const hit = want ? rows.find((l) => same(l.body.sms_number) || same(l.body.phone_e164)) : undefined;
+  return hit || rows[0] || null;
 }
 
 Deno.serve(async (req: Request) => {

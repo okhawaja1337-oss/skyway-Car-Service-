@@ -50,6 +50,8 @@ body {
 .chip { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: rgba(255, 255, 255, .16); color: #fff; text-transform: uppercase; letter-spacing: .4px; }
 .chip.off { background: var(--warn); }
 .chip.ok { background: var(--go); }
+.chip.dim { background: rgba(255, 255, 255, .10); opacity: .8; }
+.chip.live { background: var(--gold); color: #1d1600; }
 
 /* layout */
 .wrap { max-width: 520px; margin: 0 auto; padding: 14px 16px 24px; }
@@ -113,8 +115,18 @@ body {
 .undo { margin-top: 10px; text-align: center; }
 .linkbtn { background: none; border: 0; color: var(--info); font: inherit; font-weight: 700; padding: 10px; min-height: 44px; cursor: pointer; }
 
+/* shift switch (owner decision 7: tracking only while On shift) */
+.shiftbar { padding: 10px 16px; }
+.shiftbar .switch { min-height: 48px; }
+.shiftbar .shift-note { display: block; font-weight: 600; font-size: 12px; }
+
+/* consent box (owner decision 7: exact sentence + "I agree" before any location is shared) */
+.consent { background: var(--soft); border-radius: 12px; padding: 12px 14px; }
+.consent-txt { font-size: 16px; line-height: 1.45; font-weight: 600; margin-bottom: 12px; }
+
 /* gps */
 .gps-vals { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; word-break: break-all; }
+.live-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--go); margin-right: 6px; vertical-align: middle; box-shadow: 0 0 0 3px rgba(31, 143, 78, .25); }
 .gps-vals b { font-size: 17px; }
 .err { background: #fdecea; color: #8a1f14; border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-top: 8px; }
 @media (prefers-color-scheme: dark) { .err { background: #4a1d18; color: #ffc4bc; } }

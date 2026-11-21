@@ -23,7 +23,7 @@ Why: phones only share GPS, install as an app and receive push over HTTPS. The l
 2. Pick the repository, branch `main`. Build command: *(leave empty)*. Build output directory: `/` (the repository root — it is a static site).
 3. Press **Save and Deploy**. You get a `https://<name>.pages.dev` address in about a minute.
 4. **Custom domain:** Pages project → **Custom domains → Set up a custom domain** → `app.<yourdomain>` (console) and `go.<yourdomain>` (the short links inside texts). Cloudflare adds the DNS records for you if the domain is on Cloudflare; otherwise add the CNAME it shows.
-5. Short links: add a file named `_redirects` at the repository root with these lines so links in texts open the right page:
+5. Short links: the file `_redirects` **already exists at the repository root** (owner decision 2 — `go.<yourdomain>` lives on this same Pages project). Nothing to add; Cloudflare Pages picks it up on deploy. For reference it contains:
    ```
    /d/:token   /driver.html?t=:token   302
    /j/:token   /driver.html?j=:token   302
@@ -111,15 +111,19 @@ select cron.schedule('roll-driver-locations', '15 3 * * *', $$ select roll_drive
 1. Sign up at https://www.twilio.com/try-twilio with the business email; upgrade the account (add a card) — trial accounts can only text verified numbers.
 2. The Console home shows **Account SID** and **Auth Token** → Supabase secrets `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN`.
 
-### 4.2 The business number
-Pick one (see owner decision 1):
-- **Hosted SMS (keep calls where they are):** Twilio Console → **Phone Numbers → Manage → Hosted Numbers → Add**. You will upload a **Letter of Authorization** (Twilio generates it; the account owner signs) and a **recent phone bill** showing the number and business name. Approval 1–3 weeks. Calls are untouched; texts now reach Twilio.
-- **Port the number:** **Phone Numbers → Manage → Port numbers**. Same paperwork; calls then come through Twilio and are forwarded to the office phones (the developer sets the forwarding). 1–4 weeks.
-- **Interim while waiting:** **Buy a number → Toll-free**, then **Toll-free verification** (business name, website, sample messages, opt-in description). Approved in 1–5 days; texts show as the "Skyway text line".
+### 4.2 The business number — Hosted SMS (decided: owner decision 1)
+The existing business number keeps handling calls exactly as today; Twilio only takes over its **texts** (Hosted SMS). While Twilio and the carriers approve the paperwork, a verified toll-free number is the interim "Skyway text line".
+
+1. **Interim line first (day one):** Twilio Console → **Phone Numbers → Buy a number → Toll-free**, then **Toll-free verification** (business name, website, sample messages, and the opt-in description from 4.3). Approved in 1–5 days; passenger texts show as the "Skyway text line" until the business number is hosted.
+2. **Host the business number:** **Phone Numbers → Manage → Hosted Numbers → Add** → enter the business number. Twilio generates a **Letter of Authorization** — the account owner signs it — and asks for a **recent phone bill** showing the number and the business name. Approval 1–3 weeks. Calls are untouched; texts to that number now reach Twilio.
+3. **Add both numbers to the Messaging Service** (4.4 step 2). Texts go out from the business number once it is hosted and 10DLC (4.3) is approved; `sms-in` matches whichever number the passenger or driver texted (`locations.body.sms_number`, falling back to the location's `phone_e164`), so both numbers route to the console.
+4. Once the business number is hosted, texting ON in the console (step 7) sends from it; the toll-free line can be released or kept as a spare.
+
+*Alternative — porting:* if the current carrier refuses to host SMS, **Phone Numbers → Manage → Port numbers** (same paperwork; 1–4 weeks). Calls then come through Twilio and are forwarded to the office phones (the developer sets the forwarding); caller-ID screen-pop becomes automatic. Not the default — only if hosting fails.
 
 ### 4.3 A2P 10DLC registration (required in the US for a local number)
 1. **Messaging → Regulatory Compliance → Brand registration** (also found under "Trust Hub"): legal business name, **EIN**, address, website, contact. Fee about $4 (standard) once; vetting $40 optional.
-2. **Campaign registration**: use case **Customer Care / Delivery notifications**. Description: *"Ride confirmations, driver assignment, ETA, arrival and receipt texts for passengers of a car service; job offers and status to drivers. Opt-in by booking by phone or web; reply STOP to opt out."* Sample messages: copy two passenger texts from `PRODUCT-DESIGN.md` section 5. Campaign vetting ≈ $15 one-time + $1.50–10/month. Approval 1–3 weeks.
+2. **Campaign registration**: use case **Customer Care / Delivery notifications**. Description: *"Ride confirmations, driver assignment, ETA, arrival and receipt texts for passengers of a car service; job offers and status to drivers. Opt-in by booking by phone or web; reply STOP to opt out."* In the **opt-in description** field also quote the exact sentence dispatchers say on every phone booking (owner decision 8): *"By booking you agree to receive ride updates by text; reply STOP to opt out."* Sample messages: copy two passenger texts from `PRODUCT-DESIGN.md` section 5. Campaign vetting ≈ $15 one-time + $1.50–10/month. Approval 1–3 weeks.
 
 ### 4.4 Messaging Service
 1. **Messaging → Services → Create Messaging Service**, name `Skyway`. Use case: *Notify my users*.
@@ -136,6 +140,8 @@ In the console, **Settings → Messages**, then on any trip card press **Text** 
 ---
 
 ## 5. Square (cards, pay links, invoices)
+
+Decided (owner decision 3): the **existing Square account**, one app with sandbox + production credentials; **no card reader for the pilot** (cards are charged on file, by pay link or by invoice); **driver payouts by bank ACH / CSV** — the **Earnings** tab produces the per-driver numbers and `settlements.method` defaults to `ach_csv`. Also decided (owner decisions 4 and 5): card rides hold the **estimate + 20 %** at booking and release the difference at capture (`settings.holdFactor`, default 1.2); **no automatic gratuity** (`settings.autoGratuityPct = 0`, per-account override); the **no-show fee** (base fare) is charged only when a card is on file and only by the dispatcher pressing **Charge no-show fee** in MONEY — never automatically.
 
 1. Sign in at https://developer.squareup.com/apps with the **same login as the business's Square account** → **+ (Create your first application)** → name `Skyway Grid`.
 2. **Credentials** tab: toggle **Sandbox** first for testing (`SQUARE_ENV=sandbox`), then **Production** for launch. Copy the **Access token** → secret `SQUARE_ACCESS_TOKEN`. (The design's "Connect Square" OAuth button replaces this personal token later; the token is enough for the pilot.)
@@ -158,6 +164,16 @@ In the console, **Settings → Messages**, then on any trip card press **Text** 
 
 ---
 
+## 6b. Flight data (Phase 6): AeroDataBox
+
+Decided (owner decision 12): **AeroDataBox** for the pilot; switch to FlightAware AeroAPI only if airport pickups show late or missing updates. The console already records this as `settings.flightProvider = 'aerodatabox'` (shown as "Flight data: AeroDataBox (Phase 6)" on the Settings → Region card). Nothing to set up yet — the `flight-poll` Edge Function is built in Phase 6. When it is:
+
+1. Subscribe to AeroDataBox on RapidAPI with the business email; copy the API key → Supabase secret `AERODATABOX_API_KEY` (placeholder name; the developer confirms it when the function ships).
+2. `supabase functions deploy flight-poll`, then a `pg_cron` schedule like the ones in 3.7 (every 10 minutes, airport pickups in the next 6 hours only).
+3. Test: book an airport pickup with a flight number; the trip card shows the live arrival time and the Needs-you strip flags a delay.
+
+---
+
 ## 7. Turning things on in the console (Settings tab)
 
 Turn these on **one at a time**, in this order, and use the console for a day between each.
@@ -172,7 +188,7 @@ Turn these on **one at a time**, in this order, and use the console for a day be
 4. **Square** card → **Square connected: ON** (`settings.squareConnected`) after step 5 sandbox tests pass; switch `SQUARE_ENV` to `production` first.
 5. **Drivers** tab → **Connect phone** next to each driver (or the driver texts **JOIN** to the business number). Watch the green phone icon and the live pin.
 6. **Automation** toggles (auto-assign cascade, auto-arrived, auto-charge, auto airport fee) — each has an Undo and a "why" line; leave them off for the first week.
-7. **Simple mode** / **Expert mode** and the **admin PIN** (owner decision 11).
+7. **Simple mode** is already **ON for every station** (owner decision 11; `settings.simpleMode = true` on first run) — nothing to switch. The owner sets a 4-digit **admin PIN** (Settings → Admin PIN) on their station; from then on **Expert mode** asks for that PIN, so dispatchers stay in Simple mode and the owner unlocks Expert when needed (owner decision 6).
 
 ---
 

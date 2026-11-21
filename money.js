@@ -8,14 +8,26 @@
      rides" table (Completed card rides not yet marked paid) with
      Charge card (Square Virtual Terminal) / Paid / Mark cash / Send pay link,
      and an "Open invoices" summary per account that jumps to Invoicing.
-   - trip.payment = {status:'paid'|'pending-vt'|'link-sent', method?, at, link?}
+   - trip.payment = {status:'paid'|'pending-vt'|'link-sent'|'noshow-fee', method?, at, link?,
+     amount?, cardOnFile?}  — cardOnFile:true (or a cloud sourceId / an 'authorized'
+     hold from square-charge) is what lets the dispatcher charge a no-show fee.
    - STATE.settings.squarePayLink (Square payment-link URL) — field added to
      the Settings → Region card (#rg_extra slot from region.js) or its own card.
+   - Owner decision 4 (accepted defaults):
+       * settings.autoGratuityPct = 0 — NO automatic gratuity until an account asks;
+         account.autoGratuityPct (per account) overrides it. gratuity(t) is only ever
+         added on Account rides and is 0 unless one of those is set.
+       * No-show fee = the base fare (settings.noShowFee = {mode:'base'}), charged ONLY
+         when a card is on file and ONLY by the dispatcher pressing "Charge no-show fee"
+         in the "No-shows" list of this panel. Never automatic.
+   - Owner decision 3: driver payouts are bank ACH / CSV from the Earnings tab numbers;
+     this module builds no settlement rows (settlements.method defaults to 'ach_csv'
+     in supabase/schema.sql). No card reader for the pilot.
    - Wraps window.refreshBoard and window.renderEarnings to re-render.
    - All amounts go through window.money (region.js makes it currency-aware).
 
-   Public API: window.Money = {render, unpaid, total, charge, paid, cash,
-     payLink, openInvoices, kpis}
+   Public API: window.Money = {render, unpaid, total, gratuity, charge, paid, cash,
+     payLink, noShows, noShowFeeAmount, hasCard, noShowFee, openInvoices, kpis}
    Plain ES2019, no build step. Never edits index.html.
    ====================================================================== */
 (function () {
@@ -74,14 +86,53 @@
     if (typeof window.cardFeeAmt === 'function') { try { return Number(window.cardFeeAmt(Number(t.fare) || 0)) || 0; } catch (e) { return 0; } }
     return 0;
   }
+  function isAccountTrip(t) { return !!(t && (t.accountId || t.payType === 'Account')); }
+  /* Owner decision 4: automatic gratuity on Account rides only; the account's own
+     autoGratuityPct wins over settings.autoGratuityPct; both default 0 → adds nothing. */
+  function gratuityPct(t) {
+    if (!isAccountTrip(t)) return 0;
+    var a = t.accountId ? findAccount(t.accountId) : null, pct = NaN;
+    if (a && a.autoGratuityPct != null && a.autoGratuityPct !== '') pct = Number(a.autoGratuityPct);
+    if (!isFinite(pct)) pct = Number(settings().autoGratuityPct) || 0;
+    return Math.min(100, Math.max(0, pct));
+  }
+  function gratuity(t) {
+    t = findTrip(t); if (!t) return 0;
+    var pct = gratuityPct(t); if (!pct) return 0;
+    return round2((Number(t.fare) || 0) * pct / 100);
+  }
   function total(t) {
     t = findTrip(t); if (!t) return 0;
-    return round2((Number(t.fare) || 0) + (Number(t.tolls) || 0) + (Number(t.tip) || 0) + cardFee(t));
+    return round2((Number(t.fare) || 0) + (Number(t.tolls) || 0) + (Number(t.tip) || 0) + cardFee(t) + gratuity(t));
   }
   function sortNewest(a, b) { var ka = (a.date || '') + ' ' + (a.time || ''), kb = (b.date || '') + ' ' + (b.time || ''); if (ka !== kb) return ka < kb ? 1 : -1; return (b.createdAt || '') < (a.createdAt || '') ? -1 : 1; }
   function unpaid() { return trips().filter(function (t) { return t.status === 'Completed' && isCard(t) && !isPaid(t); }).sort(sortNewest); }
   function isInvoiced(t) { return !!(t.invoiced || t.invoiceId || (t.invoice && (t.invoice.id || t.invoice.status)) || isPaid(t)); }
-  function isAccountTrip(t) { return !!(t.accountId) || t.payType === 'Account'; }
+
+  /* ---------- no-show fee (owner decision 4: base fare, card on file, dispatcher button only) ---------- */
+  function hasCard(t) {
+    t = findTrip(t); if (!t) return false;
+    var p = t.payment || {};
+    if (p.cardOnFile || p.sourceId || p.status === 'authorized') return true;   // console flag, or square-charge put a hold / card id on the trip
+    if (t.cardOnFile) return true;
+    var a = t.accountId ? findAccount(t.accountId) : null;
+    return !!(a && (a.cardOnFile || (Array.isArray(a.cards) && a.cards.length)));
+  }
+  function noShowFeeAmount(t) {
+    t = findTrip(t); if (!t) return 0;
+    var cfg = settings().noShowFee; if (!cfg || typeof cfg !== 'object') cfg = { mode: 'base' };
+    if (cfg.mode === 'none') return 0;
+    if (cfg.mode === 'flat') return round2(cfg.amount);
+    if (cfg.mode === 'pct') return Math.round((Number(t.fare) || 0) * (Number(cfg.pct) || 0) / 100);
+    return Math.round(Number(t.fare) || 0);   // 'base' (default): the base fare, no tolls, no tip, no card fee
+  }
+  function feeCharged(t) { return !!(t && t.payment && (t.payment.status === 'noshow-fee' || t.payment.status === 'paid')); }
+  function cutoff30() { var d = new Date(); d.setDate(d.getDate() - 30); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+  /* Card no-shows from the last 30 days — the ones the dispatcher may charge, plus the ones already charged (shown with a chip). */
+  function noShows() {
+    var from = cutoff30();
+    return trips().filter(function (t) { return t.status === 'No-Show' && isCard(t) && String(t.date || '') >= from; }).sort(sortNewest);
+  }
   function openInvoices() {
     var mp = monthPrefix(), by = {};
     trips().forEach(function (t) {
@@ -90,7 +141,7 @@
       var a = t.accountId ? findAccount(t.accountId) : null;
       var key = t.accountId || '_none';
       if (!by[key]) by[key] = { accountId: t.accountId || '', name: a ? ('#' + (a.number || '') + ' ' + (a.name || '')).trim() : (t.accountId ? 'Account' : 'Account (no account picked)'), count: 0, amount: 0 };
-      by[key].count++; by[key].amount = round2(by[key].amount + (Number(t.fare) || 0) + (Number(t.tolls) || 0));
+      by[key].count++; by[key].amount = round2(by[key].amount + (Number(t.fare) || 0) + (Number(t.tolls) || 0) + gratuity(t));
     });
     return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return b.amount - a.amount; });
   }
@@ -155,6 +206,31 @@
     render();
     return ok;
   }
+  /* Owner decision 4: no-show fee. Dispatcher-only — this runs from the "Charge no-show fee"
+     button and nowhere else (no status hook, no timer). Refuses without a card on file.
+     Same Square path as "Charge card": opens the Virtual Terminal for the amount. */
+  function noShowFee(id) {
+    var t = findTrip(id); if (!t) return false;
+    if (t.status !== 'No-Show') { toast('#' + (t.dispatchNo || '') + ' is ' + (t.status || 'not a no-show') + ' — the no-show fee is only for No-Show rides.', true); return false; }
+    if (!isCard(t)) { toast('#' + (t.dispatchNo || '') + ' is not a card ride — no no-show fee.', true); return false; }
+    if (!hasCard(t)) { toast('No card on file for #' + (t.dispatchNo || '') + ' — the no-show fee cannot be charged.', true); return false; }
+    if (feeCharged(t)) { toast('#' + (t.dispatchNo || '') + ' already has its no-show fee recorded.', true); return false; }
+    var amt = noShowFeeAmount(t);
+    if (!(amt > 0)) { toast('No-show fee is zero for #' + (t.dispatchNo || '') + ' (no base fare).', true); return false; }
+    if (!window.confirm('Charge the no-show fee of ' + money(amt) + ' (base fare) to the card on file for #' + (t.dispatchNo || '') + (t.passenger ? ' — ' + t.passenger : '') + '?')) return false;
+    var ok = false;
+    var run = function () {
+      ok = openUrl(vtUrl());
+      var prev = t.payment || {};
+      t.payment = { status: 'noshow-fee', amount: amt, at: nowISO(), method: 'card', cardOnFile: true, sourceId: prev.sourceId, customerId: prev.customerId };
+      save();
+    };
+    if (window.Simple && typeof window.Simple.undoable === 'function') window.Simple.undoable('No-show fee ' + money(amt) + ' on #' + (t.dispatchNo || ''), run, [t.id]);
+    else run();
+    toast('Enter ' + money(amt) + ' in Square for #' + (t.dispatchNo || '') + ' (no-show fee).' + (ok ? '' : ' Pop-up blocked — open Square from Settings.'), !ok);
+    render();
+    return ok;
+  }
 
   /* ---------- styles ---------- */
   function ensureStyle() {
@@ -193,7 +269,25 @@
     if (p.status === 'pending-vt') return '<span class="mny-chip vt" title="Square Virtual Terminal opened ' + esc(fmtWhen(p.at)) + '">in Square ' + esc(fmtWhen(p.at)) + '</span>';
     if (p.status === 'link-sent') return '<span class="mny-chip link" title="Pay link texted ' + esc(fmtWhen(p.at)) + '">link sent ' + esc(fmtWhen(p.at)) + '</span>';
     if (p.status === 'failed') return '<span class="mny-chip">card failed</span>';
+    if (p.status === 'noshow-fee') return '<span class="mny-chip vt" title="No-show fee ' + esc(money(p.amount)) + ' charged ' + esc(fmtWhen(p.at)) + '">fee ' + esc(money(p.amount)) + ' ' + esc(fmtWhen(p.at)) + '</span>';
     return '';
+  }
+  function noShowRows(list) {
+    var h = '<div class="tbl-scroll"><table class="data" id="mny_noshow"><thead><tr><th>#</th><th>When</th><th>Passenger</th><th>Route</th><th class="num">Fee</th><th>No-show fee</th></tr></thead><tbody>';
+    list.forEach(function (t) {
+      var whenTxt = (t.date === todayStr() ? 'Today' : esc(t.date || '')) + (t.time ? ' ' + esc(fmtTime12(t.time)) : '');
+      var card = hasCard(t), done = feeCharged(t), amt = noShowFeeAmount(t);
+      var btn;
+      if (done) btn = '<span class="hint" style="margin:0;">charged</span>';
+      else if (!card) btn = '<button class="btn btn-ghost btn-sm" type="button" disabled title="No card on file">Charge no-show fee</button>';
+      else btn = '<button class="btn btn-navy btn-sm" type="button" data-act="noshow" data-id="' + esc(t.id) + '" title="Charge the base fare (' + esc(money(amt)) + ') to the card on file — dispatcher only, never automatic">Charge no-show fee</button>';
+      h += '<tr data-trip="' + esc(t.id) + '"><td>' + esc(t.dispatchNo || '') + '</td><td>' + whenTxt + '</td>'
+        + '<td>' + esc(t.passenger || '—') + (t.phone ? '<div class="hint" style="margin:0;">' + esc(fmtPhone(t.phone)) + '</div>' : '') + '</td>'
+        + '<td>' + esc(shortAddr(t.puAddr)) + ' &rarr; ' + esc(shortAddr(t.doAddr)) + chip(t) + '</td>'
+        + '<td class="num"><b>' + esc(money(amt)) + '</b><div class="hint" style="margin:0;">base fare</div></td>'
+        + '<td><div class="mny-acts">' + btn + '</div></td></tr>';
+    });
+    return h + '</tbody></table></div>';
   }
   function tile(v, k, cls) { return '<div class="stat' + (cls ? ' ' + cls : '') + '"><div class="v">' + esc(v) + '</div><div class="k">' + esc(k) + '</div></div>'; }
   function render() {
@@ -221,6 +315,11 @@
       });
       h += '</tbody></table></div>';
     }
+    var ns = noShows();
+    if (ns.length) {
+      h += '<h4>No-shows <span class="hint" style="margin:0;font-weight:400;">&mdash; card rides where the rider never appeared (last 30 days). Fee = base fare, only with a card on file, only when you press the button.</span></h4>';
+      h += noShowRows(ns);
+    }
     h += '<h4>Open invoices <span class="hint" style="margin:0;font-weight:400;">&mdash; account rides this month not yet invoiced</span></h4>';
     if (!inv.length) h += '<div class="hint" id="mny_inv_empty" style="margin:0 0 4px;">No account rides waiting for an invoice this month.</div>';
     else {
@@ -239,6 +338,7 @@
       else if (a === 'paid') paid(id);
       else if (a === 'cash') cash(id);
       else if (a === 'link') payLink(id);
+      else if (a === 'noshow') noShowFee(id);
       else if (a === 'invoicing') { if (typeof window.goTab === 'function') window.goTab('invoicing'); }
     } catch (err) { try { console.error('[money]', err); } catch (e2) {} }
   }
@@ -283,11 +383,20 @@
   function earningsActive() { var v = byId('view-earnings'); return !!(v && v.classList.contains('active')); }
 
   /* ---------- public API ---------- */
-  window.Money = { render: render, unpaid: unpaid, total: total, kpis: kpis, openInvoices: openInvoices, charge: charge, paid: paid, cash: cash, payLink: payLink, renderSettings: renderSettingsField };
+  window.Money = { render: render, unpaid: unpaid, total: total, gratuity: gratuity, kpis: kpis, openInvoices: openInvoices, charge: charge, paid: paid, cash: cash, payLink: payLink, noShows: noShows, noShowFeeAmount: noShowFeeAmount, hasCard: hasCard, noShowFee: noShowFee, renderSettings: renderSettingsField };
+
+  /* ---------- settings defaults (owner decisions 4) — saved only when they were missing ---------- */
+  function ensureDefaults() {
+    var s = settings(), dirty = false;
+    if (s.autoGratuityPct == null) { s.autoGratuityPct = 0; dirty = true; }            // no automatic gratuity until accounts ask
+    if (!s.noShowFee || typeof s.noShowFee !== 'object') { s.noShowFee = { mode: 'base' }; dirty = true; }   // no-show fee = base fare
+    if (dirty) save();
+  }
 
   /* ---------- boot ---------- */
   function boot() {
     try { ensureStyle(); } catch (e) {}
+    try { ensureDefaults(); } catch (e) {}
     if (settings().squarePayLink == null) settings().squarePayLink = '';
     hook('refreshBoard', function () { if (earningsActive()) render(); });
     hook('renderEarnings', render);
