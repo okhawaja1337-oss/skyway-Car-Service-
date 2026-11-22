@@ -22,6 +22,7 @@
 10. Phased roadmap
 11. Monthly costs
 12. Risks and decisions needed from the owner
+13. Operations build (phase B): the eight add-on modules
 Appendix A — Database tables
 Appendix B — Edge Functions
 Appendix C — Settings keys added
@@ -200,6 +201,7 @@ Think of it as the current console with a **cloud notebook** behind it. The cons
 | **Flight tracking** | AeroDataBox (RapidAPI) or FlightAware AeroAPI, polled by pg_cron | Adjusts airport pickups on delays, texts passenger and driver |
 | **AI assistant** (optional) | Claude API from `ai-draft` Edge Function with a strict JSON schema | Turns inbound passenger texts into draft trips the dispatcher confirms; never books, charges or dispatches on its own |
 | **Monitoring** | Supabase logs + Sentry (browser) + a free uptime check; failure alerts texted to the owner | Know within minutes when texts or charges stop |
+| **Operations modules** (phase B, built) | `fixes.js`, `quote.js`, `ops.js`, `ledger.js`, `crm.js`, `recurring.js`, `plan.js`, `recover.js` — eight classic scripts after `simple.js`, each an IIFE that wraps console globals and repairs its own STATE keys on load | Eligibility gate on every assign path, call log and callback queue, versioned fare table with a quote on every booking, double-entry ledger and settlements, win-back CRM with consent and suppression, standing rides, owner scorecard and 13-week cash sheet, TLC export lint, staff PINs and roles, encrypted backup with restore test (section 13) |
 
 ### Data flow for one trip (technical)
 
@@ -529,6 +531,44 @@ All 14 were decided on the recommended defaults on 2026-11-21; the accepted valu
 
 ---
 
+## 13. Operations build (phase B): the eight add-on modules
+
+### Plain English
+
+The turnaround plan asked for the console to run the office the way Uber's and Limosys's back ends do, without a rewrite. Eight more files now sit beside `index.html`. Nothing a dispatcher knew is moved; the modules add gates, logs and panels where the plan found gaps:
+
+| What the owner sees | File |
+|---|---|
+| A driver whose TLC licence, DMV licence, insurance, registration or inspection has lapsed cannot be put on a ride, by any button. The reason is named. Fleet gets a roster check and a printable roster. | `ops.js` |
+| Every phone call is a record: answered, missed, voicemail, overflow. One tap marks a line Missed; the callback waits in Needs-you until someone calls back, books, or closes it. The phone system's call-detail report imports with a saved column map. Weekly call metrics export as CSV. | `ops.js` |
+| Prices come from a **numbered fare table**. Every booking carries a quote with the version it was priced under. Version 1 is the console's own engine, untouched; version 2 is the plan's proposed table and waits for the owner to activate it. A typed fare far from the table asks for the owner PIN. | `quote.js` |
+| Money is kept in a **double-entry ledger**: fares collected by the office or the driver, base fees owed and received, tips, tolls, refunds, Square fees, payouts. Cash base fees get numbered receipts. A weekly settlement run produces one statement per driver. Square's CSV imports idempotently and reconciles to the cent. W-9 flag and 1099 list. | `ledger.js` |
+| Lapsed regulars sit on a **win-back worklist** with an outreach log. A customer who asks not to be contacted is suppressed on every texting path. Text consent (informational, marketing) is recorded per phone. Prospective accounts move through a pipeline. | `crm.js` |
+| **Standing rides**: "Repeat this ride" puts the chosen weekdays on the board for today and the next 14 days, rolling forward one day each day, never twice, through the eligibility gate. | `recurring.js` |
+| The **Plan panel** under Money → Business: the weekly scorecard from the plan's section 9, the 13-week cash sheet from the workbook, and the five-route price test. Bank and payroll figures are typed in, never stored in this public repository. | `plan.js` |
+| **Prove recovery**: the TLC export refuses a file with a missing plate, licence, pickup or drop-off time and lists the rides to fix. Staff sign in with their own hashed PIN as owner, dispatcher or bookkeeper; owner-only actions ask for it; an audit trail keeps the last 2,000 actions. Backups are encrypted and a restore is rehearsed in a sandbox before it touches the station. A printable outage sheet covers a dead computer. | `recover.js` |
+| Five small audit fixes and the **Money defaults** Settings card (gratuity %, no-show fee, hold factor, airport fee, fee mode and tiers), plus a Card-on-file checkbox in the account editor. | `fixes.js` |
+
+Four things to know before first load on the production station: imported drivers block dispatch until their TLC dates are entered (or Settings → Eligibility is set to warn-only); prices do not change until the owner activates rate version 2; the one-time airport "tip" migration treats an unbilled airport ride whose tip is exactly 15 % of the fare as the old automatic estimate; set the owner PIN in Settings → Staff, since a station with no PIN is open to anyone at the desk.
+
+### Builder notes
+
+**Load order and the wrap convention.** The tags follow `simple.js`: `fixes`, `quote`, `ops`, `ledger`, `crm`, `recurring`, `plan`, `recover`. Pricing before money, the gate before anything that assigns, `recover.js` last so its audit and role wrappers sit on top of the chain. Each module wraps a console global as `window.fn = wrapper; wrapper._orig = fn` and marks the wrapper (`__fixesWrapped`, `_opsWrapped`, `_ledgerWrapped`, `__crmWrapped` and so on); wrap helpers copy the inner wrappers' marker flags onto the outer function so load guards stay honest in a chain. Anonymous handlers (`#d_save`, `#tlc_export`) are intercepted with a capture-phase listener plus a bubble-phase partner instead. Every module repairs its own STATE keys on load (missing, null or wrong-typed keys are rebuilt), so an old backup imports unchanged and a damaged station self-heals.
+
+**Hard gate.** `Ops.eligibility(driverId, vehicleId, trip)` is pure and returns `{ok, reasons[]}`. It runs inside `assignDriver`, `bestAssign`, `diqAssign`, `optAssignOne`, `optApplyAll`, `cycleStatus` (Booked → Dispatched), the Book form, the board Edit overlay, the classic-view Dispatch button and the pop-outs. A refusal toasts the reason and stamps `trip.eligibility`. `settings.enforceEligibility` (default true) switches the gate to warn-only; an owner-PIN override records who and why on the trip. `settings.requireVehicle` ships false so the pilot roster stays workable. Standing-ride generation goes through the same gate per date; a refused child is created with no driver and shows a "not eligible" chip.
+
+**Owner-only actions.** Settlement runs, mark-paid, refunds, rate activation, staff changes, the trips CSV and backup exports, restore and reset ask for the owner PIN (the TLC file and the audit export are also open to a signed-in bookkeeper) unless an owner is signed in through `recover.js`; one prompt signs the owner in for the session. PINs are PBKDF2-SHA-256 over a random salt (WebCrypto). On first run the existing `settings.adminPin` is hashed into the owner's staff record and the first PIN set in the Staff panel is mirrored back so `simple.js` and the other modules, which still read `settings.adminPin`, agree.
+
+**Records the modules own.** `STATE.rates` (active version, history, draft), `trips[].quote`, `STATE.calls[]`, `STATE.ledger {entries[], voided[], receipts[], settlements[], imports[]}`, `STATE.crm {worklist[], outreach[], pipeline[]}`, `STATE.customers[]`, `trips[].crmRowId`, `STATE.recurring[]`, `trips[].recurringId`, `STATE.plan`, `STATE.staff[]`, `STATE.audit[]` (ring buffer, 2,000), `STATE.exports[]`. Sync carries `calls`, `customers` and `staff` as row tables and the rest as `config` keys; staff rows travel without `salt`, `hash` and `iter`, and the `staff_promote` trigger strips them again server-side. The service worker caches the eight files (`skyway-driver-v3`).
+
+**Console edits that were needed.** Three, all in `index.html`: the eight script tags; the account invoice builder bills only Completed rides whose pay type is blank or Account and carries the automatic account gratuity so the bill equals the receivable the ledger journals; Reset also clears the `recover.js` staff session. `money.js` gained one line so a trip with an invoice number counts as invoiced.
+
+**Verification.** Playwright against `file://index.html` with the modules loaded by the page: the 17-tab regression and the audit suite are green; a 26-check integration suite (old-shape STATE load, Reset, Simple-mode reachability, sync key lists, PIN stripping, pop-outs) is green; a 72-check full-day scenario (Simple and Expert, double-click races, junk input, two desks in one station, damaged old-shape profile) passes except one clock-dependent check on the legacy rate table's rush add-on. Per-module suites and adversarial verifier suites live in the session scratchpad. Desk confirmation by the dispatcher is still owed for each module's acceptance line.
+
+**Open owner choices surfaced by the build.** Booked → Dispatched with no driver is refused; a station with no owner PIN runs owner actions after a hint toast rather than refusing; `settings.adminPin` stays in clear in the settings row (as before).
+
+---
+
 ## Appendix A — Database tables (Supabase Postgres)
 
 All tables: `id` (text, from `uid()` where the console created the row, else uuid), `location_id`, `created_at`, `updated_at`, `rev`, `deleted_at`, `body JSONB`. RLS by `location_id` and role.
@@ -549,7 +589,10 @@ All tables: `id` (text, from `uid()` where the console created the row, else uui
 | `accounts` | number, name, email, square_customer_id, billing_cycle, net_days | `STATE.accounts[]` |
 | `passengers` | phone_e164, name, email, square_customer_id, sms_opt_out | derived from `trips` + `skyway_callerbook` |
 | `addrbook` | place_id, lat, lng | `STATE.addrbook[]` + `STATE.addrFix` |
-| `config` | key (zones, fares, farebook, routebook, hints, geocache, compliance, map, airports, rate_card, promos) | `STATE.*` + `skyway_routebook` |
+| `config` | key — synced today: zones, fares, farebook, hints, addrFix, compliance, map, finance, rates, ledger, invoices, crm, recurring, plan, audit, exports (`sync.js` CONFIG_KEYS); planned: routebook, geocache, airports, rate_card, promos | `STATE.*` + the phase-B module keys (section 13); `skyway_routebook` when routebook is added |
+| `calls` | at, number_key, direction, outcome, closed_at, trip_id | `STATE.calls[]` (`ops.js`) |
+| `customers` | phone_e164, name, suppress_call, suppress_text, sms_consent_informational, sms_consent_marketing, sms_opt_out | `STATE.customers[]` (`crm.js`) |
+| `staff` | name, role, active | `STATE.staff[]` (`recover.js`); the PIN hash fields `salt`, `hash`, `iter` are stripped by the console and again by the `staff_promote` trigger |
 | `finance` | period | `STATE.finance` |
 | `call_history` | at, phone_e164 | IndexedDB `skyway_history` + `skyway_histseed` |
 | `invoices` | invoice_no, account_id, period, total, status, square_invoice_id, pdf_url | existing generator + `invoiceSeq` |
@@ -573,6 +616,8 @@ All tables: `id` (text, from `uid()` where the console created the row, else uui
 
 `settings.cloud {url, anonKey, locationId, enabled, publicBaseUrl}` (`publicBaseUrl` = `https://go.<domain>`, the short-link base shown on the Cloud card — owner decision 2) · `settings.twilioReady` · `settings.squareConnected` · `settings.simpleMode` (default `true`, Phase A) · `settings.expertMode` · `settings.adminPin` · `settings.region` (mirror of the `locations` row) · `settings.flightProvider` (`'aerodatabox'` — owner decision 12; read by the Phase 6 `flight-poll` function) · `settings.automation {autoAssign, autoArrived, autoCharge, autoAirportFee, offerSeconds:90, geofenceM:150}` · `settings.square` (existing Virtual Terminal link — kept).
 
+Phase B (section 13): `settings.paFee` (3.50, Port Authority airport access fee) · `settings.learnTypedFares` (false) · `settings.itemizePassThroughs` · `settings.feeMode` (`'flat'` | `'tiers'`) · `settings.feeTiers` (published from the active rate version) · `settings.baseFeePerCall` · `settings.quoteDeviationLimit {abs:5, pct:15}` · `settings.quoteGoLiveSnoozedUntil` · `settings.enforceEligibility` (true; false = warn-only) · `settings.requireVehicle` (false) · `settings.partnerBase {baseName, baseLicence, contact, agreementSignedAt, recordExchangeAgreed, verifiedAt}` · `settings.cdrMapping` (saved column map per header signature) · `settings.holdFactor` (1.2, kept inside 1.0–1.5) · `STATE.ledger.settings.threshold1099` (2000). The Money defaults card also edits two phase-A keys from `money.js`, `settings.autoGratuityPct` (0) and `settings.noShowFee {mode: 'base' | 'flat' | 'pct' | 'none', amount, pct}`, and adds a checkbox for the existing `accounts[].cardOnFile` in the account editor. `settings.baseFeePerCall` (6.04) is the console's own key; `quote.js` only reads it.
+
 ## Appendix D — Nothing removed
 
-Every tab, engine, pop-out screen, export, theme, keyboard shortcut and stored record in the current `index.html` is preserved. The only changes to the file itself are: one `<script src="sync.js">` tag (Phase 1), one `<script src="simple.js">` tag (Phase 5), and a rotated Google key (Phase 0). Expert mode shows the original interface byte-for-byte.
+Every tab, engine, pop-out screen, export, theme, keyboard shortcut and stored record in the current `index.html` is preserved. The changes to the file itself are: the add-on `<script>` tags (`region`, `messages`, `driver-link`, `money`, `sync`, `simple`, then the eight phase-B modules of section 13), the invoice builder's pay-type filter and gratuity line, the Reset handler clearing the staff session, and a rotated Google key (Phase 0, still to do). Expert mode shows the original interface; where a module adds a gate or a chip it is listed in section 13.
