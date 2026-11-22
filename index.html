@@ -17382,7 +17382,7 @@ $('iv_build').addEventListener('click',()=>{
   if(!acct){toast('Pick an account first.',true);return;}
   const from=$('iv_from').value,to=$('iv_to').value;
   // bill only finished rides (never Booked / No-Show / Disregard / Canceled) and never the same ride twice
-  const inRange=STATE.trips.filter(t=>t.accountId===acct.id&&t.status==='Completed'&&(!from||t.date>=from)&&(!to||t.date<=to));
+  const inRange=STATE.trips.filter(t=>t.accountId===acct.id&&t.status==='Completed'&&(!t.payType||/account/i.test(t.payType))&&(!from||t.date>=from)&&(!to||t.date<=to));   // pay type first (owner decision 6): card / cash rides were collected already
   const already=inRange.filter(t=>t.invoiceNo);
   const trips=inRange.filter(t=>!t.invoiceNo).sort((a,b)=>a.date===b.date?(a.time<b.time?-1:1):(a.date<b.date?-1:1));
   const note=already.length?'<div class="hint" style="margin:0 0 8px;">'+already.length+' completed trip'+(already.length>1?'s':'')+' in this range '+(already.length>1?'are':'is')+' already on invoice #'+esc([...new Set(already.map(t=>t.invoiceNo))].join(', #'))+' and left out.</div>':'';
@@ -17403,8 +17403,9 @@ $('iv_build').addEventListener('click',()=>{
 const SKYWAY_LOGO_SVG='<svg class="inv-logo" width="66" height="66" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="48" fill="#111"/><path d="M30 32 Q72 26 60 50 Q48 74 80 68" fill="none" stroke="#c9a227" stroke-width="15" stroke-linecap="round"/><path d="M30 32 Q72 26 60 50 Q48 74 80 68" fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="3 6"/></svg>';
 function buildInvoiceHTML(acct,trips,due,invNo){
   const s=STATE.settings;let sub=0,tolls=0,tips=0,rows='';
-  trips.forEach(t=>{sub+=Number(t.fare)||0;tolls+=Number(t.tolls)||0;tips+=Number(t.tip)||0;
-    rows+=`<tr><td>${fmtDate(t.date)}</td><td>${esc(t.puAddr)}</td><td>${esc(t.doAddr)}</td><td class="r">${money(t.tolls)}</td><td class="r">${money((Number(t.fare)||0)+(Number(t.tip)||0))}${Number(t.tip)>0?'<div class="hint" style="margin:0;">incl. '+money(t.tip)+' tip</div>':''}</td></tr>`;});
+  trips.forEach(t=>{const grat=(window.Money&&typeof Money.gratuity==='function')?(Math.round((Number(Money.gratuity(t))||0)*100)/100):0;   // automatic gratuity on Account rides (money.js) — billed here so the books and the bill agree
+    sub+=Number(t.fare)||0;tolls+=Number(t.tolls)||0;tips+=(Number(t.tip)||0)+grat;
+    rows+=`<tr><td>${fmtDate(t.date)}</td><td>${esc(t.puAddr)}</td><td>${esc(t.doAddr)}</td><td class="r">${money(t.tolls)}</td><td class="r">${money((Number(t.fare)||0)+(Number(t.tip)||0)+grat)}${Number(t.tip)>0?'<div class="hint" style="margin:0;">incl. '+money(t.tip)+' tip</div>':''}${grat>0?'<div class="hint" style="margin:0;">incl. '+money(grat)+' gratuity</div>':''}</td></tr>`;});
   const subtotal=sub+tolls+tips,ccu=Number(acct.ccu!=null?acct.ccu:s.ccu)||0,total=subtotal+ccu;window._lastInvTotal=total;
   const addrLines=(acct.addr||'').split(/\n|,(?=\s*[A-Za-z]{2},?\s*\d)/).map(x=>x.trim()).filter(Boolean);
   const feeLabel=acct.feeLabel||'CCU';
@@ -17797,6 +17798,7 @@ function toISO(d){if(!d)return '';const p=d.split('/');if(p.length===3){return p
 $('b_reset').addEventListener('click',()=>{if(!confirm('Erase ALL data on this computer? Export a backup first if unsure.'))return;if(!confirm('Last chance — this cannot be undone. Continue?'))return;
   STATE=migrate(defaultState());
   ['skyway_help_seen','skyway_sync_queue','skyway_sync_cursor'].forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});
+  try{sessionStorage.removeItem('skyway_staff_session');}catch(e){}   // recover.js sign-in: the staff list it points at is gone
   saveNow();applyBrand();goTab('dispatch');toast('All data reset.',true);});
 
 /* ============ PRINT ============ */
@@ -17909,5 +17911,16 @@ setInterval(()=>{if($('view-dispatch')&&$('view-dispatch').classList.contains('a
 <script src="money.js"></script>
 <script src="sync.js"></script>
 <script src="simple.js"></script>
+<!-- add-on modules: each is an IIFE that wraps the console's globals and has a load guard.
+     Order matters: fixes.js and quote.js (pricing) before ledger.js/plan.js (money), ops.js before
+     anything that assigns a driver, recover.js LAST so its audit/role wrappers sit on top of the chain. -->
+<script src="fixes.js"></script>
+<script src="quote.js"></script>
+<script src="ops.js"></script>
+<script src="ledger.js"></script>
+<script src="crm.js"></script>
+<script src="recurring.js"></script>
+<script src="plan.js"></script>
+<script src="recover.js"></script>
 </body>
 </html>

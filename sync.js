@@ -51,11 +51,24 @@
   var BACKOFF_MIN = 2000, BACKOFF_MAX = 5 * 60 * 1000;
   var PULL_LIMIT = 500;
   /* STATE[] arrays that become one row per element */
-  var ARRAYS = ['trips', 'drivers', 'vehicles', 'accounts', 'addrbook'];
+  var ARRAYS = ['trips', 'drivers', 'vehicles', 'accounts', 'addrbook',
+    'calls',       /* ops.js: call log (table `calls`) */
+    'customers',   /* crm.js: suppression / SMS consent per phone (table `customers`) */
+    'staff'];      /* recover.js: named staff and roles (table `staff`; PIN hash fields stay local, see STAFF_SKIP) */
   /* STATE keys mirrored as rows of the `config` table (id = <locationId>:<key>) */
-  var CONFIG_KEYS = ['zones', 'fares', 'farebook', 'hints', 'addrFix', 'compliance', 'map', 'finance'];
+  var CONFIG_KEYS = ['zones', 'fares', 'farebook', 'hints', 'addrFix', 'compliance', 'map', 'finance',
+    'rates',       /* quote.js: active rate version, history, draft */
+    'ledger',      /* ledger.js: journal, receipts, settlements, imports, payouts */
+    'invoices',    /* console invoices (ledger.js writes status/paidAt into them) */
+    'crm',         /* crm.js: win-back worklist, outreach log, pipeline */
+    'recurring',   /* recurring.js: standing orders */
+    'plan',        /* plan.js: scorecard, 13-week cash sheet, route test */
+    'audit',       /* recover.js: audit ring buffer */
+    'exports'];    /* recover.js: export records (metadata only, never a key) */
   /* settings keys that never leave this browser */
   var SETTINGS_SKIP = { cloud: 1, gmapkey: 1, geokey: 1 };
+  /* staff row fields that never leave this browser: a PIN hash is per station (the role and name sync, the PIN is re-set locally) */
+  var STAFF_SKIP = { salt: 1, hash: 1, iter: 1 };
   var TABLES = ARRAYS.concat(['settings', 'config']);
 
   /* ---------- tiny helpers (own copies: never assume globals exist) ---------- */
@@ -175,6 +188,11 @@
   /* ---------- row builders ---------- */
   function addrId(x) { if (x && x.id != null && x.id !== '') return String(x.id); return 'ab_' + hashStr(String((x && x.address) || '').trim().toLowerCase()); }
   function rowId(table, x) { if (table === 'addrbook') return addrId(x); return x && x.id != null ? String(x.id) : ''; }
+  /* the body sent for an array element (staff rows go without their PIN hash fields) */
+  function rowBody(table, x) {
+    if (table !== 'staff' || !x || typeof x !== 'object') return x;
+    var out = {}; Object.keys(x).forEach(function (k) { if (!STAFF_SKIP[k]) out[k] = x[k]; }); return out;
+  }
   function settingsBody() {
     var s = state(); var out = {}; var st = (s && s.settings) || {};
     Object.keys(st).forEach(function (k) { if (!SETTINGS_SKIP[k]) out[k] = st[k]; });
@@ -189,7 +207,7 @@
     if (table === 'settings') return id === settingsRowId() ? settingsBody() : null;
     if (table === 'config') { var key = id.slice(locId().length + 1); return CONFIG_KEYS.indexOf(key) >= 0 ? configBody(key) : null; }
     var arr = s[table]; if (!Array.isArray(arr)) return null;
-    for (var i = 0; i < arr.length; i++) if (rowId(table, arr[i]) === id) return arr[i];
+    for (var i = 0; i < arr.length; i++) if (rowId(table, arr[i]) === id) return rowBody(table, arr[i]);
     return null;
   }
   function rowFor(entry) {
@@ -209,7 +227,7 @@
       var arr = Array.isArray(s[table]) ? s[table] : []; seen = {};
       for (i = 0; i < arr.length; i++) {
         id = rowId(table, arr[i]); if (!id) continue; seen[id] = 1;
-        h = hashOf(arr[i]);
+        h = hashOf(rowBody(table, arr[i]));
         if (snapGet(table, id) !== h) { enqueue(table, id, false); snapSet(table, id, h); n++; }
       }
       var known = snap[table] || {};
@@ -326,6 +344,10 @@
     if (table === 'drivers' && idx >= 0) {
       /* a phone's GPS pin replacing a manual pin: tell the dispatcher (design §4) */
       try { var oldL = arr[idx].curLoc, newL = body.curLoc; if (oldL && newL && oldL.source === 'manual' && newL.source === 'gps' && String(newL.when || '') > String(oldL.when || '')) toast((body.name || 'Driver') + "'s phone is reporting again — manual pin replaced."); } catch (e) {}
+    }
+    if (table === 'staff' && idx >= 0) {
+      /* PIN hashes never travel: keep this station's own salt/hash/iter for the record */
+      Object.keys(STAFF_SKIP).forEach(function (k) { if (arr[idx][k] != null && body[k] == null) body[k] = arr[idx][k]; });
     }
     if (idx >= 0) arr[idx] = body; else arr.push(body);
     snapSet(table, id, h);
@@ -466,7 +488,7 @@
     var jobs = [];
     ARRAYS.forEach(function (t) {
       var arr = Array.isArray(s[t]) ? s[t] : [], rows = [];
-      for (var i = 0; i < arr.length; i++) { var id = rowId(t, arr[i]); if (!id) continue; rows.push({ id: id, location_id: locId(), body: arr[i], rev: rev, deleted_at: null }); }
+      for (var i = 0; i < arr.length; i++) { var id = rowId(t, arr[i]); if (!id) continue; rows.push({ id: id, location_id: locId(), body: rowBody(t, arr[i]), rev: rev, deleted_at: null }); }
       jobs.push({ table: t, rows: rows });
     });
     jobs.push({ table: 'settings', rows: [{ id: settingsRowId(), location_id: locId(), body: settingsBody(), rev: rev, deleted_at: null }] });

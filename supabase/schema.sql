@@ -227,10 +227,38 @@ create table if not exists addrbook (
   rev bigint default 0, deleted_at timestamptz, body jsonb not null default '{}'::jsonb
 );
 
+-- ops.js call log: one row per phone call (console-logged or CDR import); sync.js ARRAYS 'calls'
+create table if not exists calls (
+  id text primary key,
+  location_id text not null,
+  at timestamptz, number_key text, direction text, outcome text, closed_at timestamptz, trip_id text,
+  created_at timestamptz default now(), updated_at timestamptz default now(),
+  rev bigint default 0, deleted_at timestamptz, body jsonb not null default '{}'::jsonb
+);
+
+-- crm.js customers: suppression flags + SMS consent per phone (id = 'cu_' + 10-digit key); sync.js ARRAYS 'customers'
+create table if not exists customers (
+  id text primary key,
+  location_id text not null,
+  phone_e164 text, name text, suppress_call boolean default false, suppress_text boolean default false,
+  sms_consent_informational boolean default false, sms_consent_marketing boolean default false, sms_opt_out boolean default false,
+  created_at timestamptz default now(), updated_at timestamptz default now(),
+  rev bigint default 0, deleted_at timestamptz, body jsonb not null default '{}'::jsonb
+);
+
+-- recover.js staff: name + role only. The console strips the PIN hash fields (salt/hash/iter) before sending; PINs are per station.
+create table if not exists staff (
+  id text primary key,
+  location_id text not null,
+  name text, role text, active boolean default true,
+  created_at timestamptz default now(), updated_at timestamptz default now(),
+  rev bigint default 0, deleted_at timestamptz, body jsonb not null default '{}'::jsonb
+);
+
 create table if not exists config (
   id text primary key,                         -- '<location_id>:<key>'
   location_id text not null,
-  key text,                                    -- zones, fares, farebook, routebook, hints, geocache, compliance, map, airports, rate_card, promos, finance
+  key text,                                    -- zones, fares, farebook, routebook, hints, geocache, compliance, map, airports, rate_card, promos, finance, rates, ledger, invoices, crm, recurring, plan, audit, exports
   created_at timestamptz default now(), updated_at timestamptz default now(),
   rev bigint default 0, deleted_at timestamptz, body jsonb not null default '{}'::jsonb,
   unique (location_id, key)
@@ -383,6 +411,12 @@ create index if not exists vehicles_loc_rev on vehicles (location_id, rev);
 create index if not exists accounts_loc_rev on accounts (location_id, rev);
 create index if not exists addrbook_loc_rev on addrbook (location_id, rev);
 create index if not exists addrbook_address_trgm on addrbook using gin (address gin_trgm_ops);
+create index if not exists calls_loc_rev on calls (location_id, rev);
+create index if not exists calls_loc_at on calls (location_id, at desc);
+create index if not exists calls_number on calls (location_id, number_key);
+create index if not exists customers_loc_rev on customers (location_id, rev);
+create index if not exists customers_phone on customers (location_id, phone_e164);
+create index if not exists staff_loc_rev on staff (location_id, rev);
 create index if not exists settings_loc_rev on settings (location_id, rev);
 create index if not exists config_loc_rev on config (location_id, rev);
 create index if not exists driver_locations_driver_at on driver_locations (driver_id, at desc);
@@ -407,7 +441,8 @@ begin
   foreach t in array array['locations','settings','trips','trip_events','offers','drivers','driver_locations',
     'driver_location_daily','device_sessions','connect_tokens','pending_devices','vehicles','accounts','passengers',
     'addrbook','config','finance','call_history','invoices','payments','square_events','reconcile_issues',
-    'settlements','messages','templates','masked_sessions','events','promos','affiliates','needs_you'] loop
+    'settlements','messages','templates','masked_sessions','events','promos','affiliates','needs_you',
+    'calls','customers','staff'] loop
     execute format('alter table %I add column if not exists client_rev bigint', t);
     execute format('drop trigger if exists %I on %I', t || '_touch', t);
     execute format('create trigger %I before insert or update on %I for each row execute function skyway_touch()', t || '_touch', t);
@@ -523,6 +558,48 @@ begin
 end $$;
 drop trigger if exists addrbook_promote on addrbook;
 create trigger addrbook_promote before insert or update on addrbook for each row execute function addrbook_promote();
+
+create or replace function calls_promote() returns trigger
+language plpgsql as $$
+declare b jsonb := coalesce(new.body, '{}'::jsonb);
+begin
+  begin new.at := nullif(b->>'at', '')::timestamptz; exception when others then new.at := null; end;
+  begin new.closed_at := nullif(b->>'closedAt', '')::timestamptz; exception when others then new.closed_at := null; end;
+  new.number_key := coalesce(nullif(b->>'numberKey', ''), right(regexp_replace(coalesce(b->>'number', ''), '[^0-9]', '', 'g'), 10));
+  new.direction := b->>'direction'; new.outcome := b->>'outcome'; new.trip_id := nullif(b->>'tripId', '');
+  return new;
+end $$;
+drop trigger if exists calls_promote on calls;
+create trigger calls_promote before insert or update on calls for each row execute function calls_promote();
+
+create or replace function customers_promote() returns trigger
+language plpgsql as $$
+declare b jsonb := coalesce(new.body, '{}'::jsonb);
+begin
+  new.phone_e164 := coalesce(skyway_e164(coalesce(b->>'phone', b->>'phoneKey')), new.phone_e164);
+  new.name := b->>'name';
+  new.suppress_call := coalesce((b->>'suppressCall')::boolean, false);
+  new.suppress_text := coalesce((b->>'suppressText')::boolean, false);
+  new.sms_consent_informational := coalesce((b->>'smsConsentInformational')::boolean, false);
+  new.sms_consent_marketing := coalesce((b->>'smsConsentMarketing')::boolean, false);
+  new.sms_opt_out := coalesce((b->>'smsOptOut')::boolean, false);
+  return new;
+end $$;
+drop trigger if exists customers_promote on customers;
+create trigger customers_promote before insert or update on customers for each row execute function customers_promote();
+
+create or replace function staff_promote() returns trigger
+language plpgsql as $$
+declare b jsonb := coalesce(new.body, '{}'::jsonb);
+begin
+  -- PIN hash fields never belong in the cloud even if an old client sends them
+  new.body := b - 'salt' - 'hash' - 'iter';
+  new.name := b->>'name'; new.role := b->>'role';
+  new.active := case when b ? 'active' then (b->>'active')::boolean else coalesce(new.active, true) end;
+  return new;
+end $$;
+drop trigger if exists staff_promote on staff;
+create trigger staff_promote before insert or update on staff for each row execute function staff_promote();
 
 create or replace function config_promote() returns trigger
 language plpgsql as $$
@@ -686,6 +763,9 @@ language sql stable security definer as $$
       'vehicles', (select count(*) from vehicles where location_id = p_location_id and deleted_at is null),
       'accounts', (select count(*) from accounts where location_id = p_location_id and deleted_at is null),
       'addrbook', (select count(*) from addrbook where location_id = p_location_id and deleted_at is null),
+      'calls',    (select count(*) from calls    where location_id = p_location_id and deleted_at is null),
+      'customers',(select count(*) from customers where location_id = p_location_id and deleted_at is null),
+      'staff',    (select count(*) from staff    where location_id = p_location_id and deleted_at is null),
       'invoices', (select count(*) from invoices where location_id = p_location_id and deleted_at is null),
       'settings', (select count(*) from settings where location_id = p_location_id and deleted_at is null),
       'config',   (select count(*) from config   where location_id = p_location_id and deleted_at is null)),
@@ -774,7 +854,8 @@ begin
   foreach t in array array['locations','settings','trips','trip_events','offers','drivers','driver_locations',
     'driver_location_daily','device_sessions','connect_tokens','pending_devices','vehicles','accounts','passengers',
     'addrbook','config','finance','call_history','invoices','payments','square_events','reconcile_issues',
-    'settlements','messages','templates','masked_sessions','events','promos','affiliates','needs_you'] loop
+    'settlements','messages','templates','masked_sessions','events','promos','affiliates','needs_you',
+    'calls','customers','staff'] loop
     execute format('alter table %I enable row level security', t);
     -- dispatchers: everything in their locations
     execute format('drop policy if exists %I on %I', t || '_dispatcher_all', t);
@@ -832,7 +913,7 @@ $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['settings','trips','drivers','vehicles','accounts','addrbook','config','finance','invoices','messages','needs_you','locations'] loop
+  foreach t in array array['settings','trips','drivers','vehicles','accounts','addrbook','config','finance','invoices','messages','needs_you','locations','calls','customers','staff'] loop
     execute format('drop policy if exists %I on %I', t || '_anon_sync', t);
     execute format('create policy %I on %I for all to anon using (skyway_anon_sync_ok(location_id)) with check (skyway_anon_sync_ok(location_id))', t || '_anon_sync', t);
   end loop;

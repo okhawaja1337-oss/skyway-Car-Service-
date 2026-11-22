@@ -97,6 +97,39 @@ from the original console was removed:
 | `docs/SETUP.md` | Plain-English owner guide: Cloudflare Pages, Supabase, Twilio (business number), Square, Google Cloud, and how to switch each on — and off. |
 | `docs/OWNER-DECISIONS.md` | The 14 decisions only the owner can make, each with a recommended default — all 14 decided on the defaults (2026-11-21). |
 
+## Operations build (phase B): eight more add-on modules
+
+Eight further modules load after `simple.js` (fixes, quote, ops, ledger, crm,
+recurring, plan, recover — in that order; `recover.js` last so its audit and
+role wrappers sit on top). Each is a self-contained IIFE that wraps console
+globals and repairs its own STATE keys on load, so an old backup imports
+unchanged. Cloud sync carries the new records (`calls`, `customers`, `staff`
+tables; `rates`, `ledger`, `invoices`, `crm`, `recurring`, `plan`, `audit`,
+`exports` config keys) and staff PIN hashes never leave the station.
+
+| File | What it adds |
+|------|--------------|
+| `fixes.js` | Five audit fixes (airport "tip" becomes a non-billed estimate, card fee is 0 unless a card % is set, typed fares are not learned, Off-duty drivers leave the assign lists, Port Authority airport fee $3.50 itemised) plus the **Money defaults** Settings card. |
+| `quote.js` | **Versioned fare table** with a quote stamped on every booking (id, rate version, components, deviation). Version 1 is the console's own engine, untouched; the owner activates the proposed table (version 2) at go-live. Fare changes beyond the limit ask for the owner PIN; `rates.json` export; "Retained per ride" warning. |
+| `ops.js` | **Driver and vehicle eligibility** (TLC, DMV, insurance, registration, inspection dates) as a hard gate on every assign path, with a printable roster. **Call log** from the F1–F6 lines with one-tap Missed, a callback queue in Needs-you, CDR import and weekly call metrics. Partner-base record for overflow. |
+| `ledger.js` | **Settle and reconcile**: double-entry journal, numbered cash receipts, weekly settlement runs, refunds, Square CSV import, reconciliation, W-9 flag and 1099 list, cash-received P&L. |
+| `crm.js` | **Win-back worklist** and outreach log, suppression flags that block every texting path, SMS consent per phone, account pipeline. |
+| `recurring.js` | **Standing rides**: "Repeat this ride" creates weekday children 14 days ahead, idempotently, through the eligibility gate. |
+| `plan.js` | **Plan panel** (Money → Business): weekly scorecard, 13-week cash sheet, five-route price test. The firm's own bank and payroll figures are typed in, never stored in this public repository. |
+| `recover.js` | **Prove recovery**: TLC export lint (Completed trips only, missing fields block the file), named staff with hashed PINs and roles (owner / dispatcher / bookkeeper), audit ring buffer, AES-GCM encrypted backup with a sandbox restore test, printable outage sheet. |
+
+Things the owner should know before first load on the production station:
+
+- **Imported drivers block dispatch until their TLC dates are entered** in
+  Fleet (or Settings → Eligibility is switched to warn-only).
+- **Prices do not change until the owner activates rate version 2**; a
+  Needs-you line reminds you at go-live.
+- **The one-time airport tip migration is a heuristic**: an unbilled airport
+  trip whose tip equals exactly 15 % of the fare is treated as the old
+  automatic estimate.
+- **Set the owner PIN** in Settings → Staff; with no PIN the station is open
+  to anyone at the desk.
+
 ### Owner decisions
 
 All 14 owner decisions were settled on the recommended defaults on 2026-11-21;

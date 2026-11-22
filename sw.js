@@ -2,9 +2,12 @@
    Caches the driver page shell (driver.html / driver.js / driver.css / manifest)
    so the page opens with no signal after the first load. The job itself lives in
    the URL hash and in localStorage, so nothing else is needed offline.
-   Bump CACHE when any of the shell files change. */
-var CACHE = 'skyway-driver-v2';
-var SHELL = ['./driver.html', './driver.js', './driver.css', './manifest.webmanifest'];
+   Bump CACHE when any of the shell files change.
+   The console's add-on modules are listed too so a station that registers this worker
+   (https only) keeps them offline; a missing file never fails the install. */
+var CACHE = 'skyway-driver-v3';
+var MODULES = ['./fixes.js', './quote.js', './ops.js', './ledger.js', './crm.js', './recurring.js', './plan.js', './recover.js'];
+var SHELL = ['./driver.html', './driver.js', './driver.css', './manifest.webmanifest'].concat(MODULES);
 
 self.addEventListener('install', function (ev) {
   ev.waitUntil(
@@ -28,6 +31,7 @@ function isShell(url) {
     var u = new URL(url);
     if (u.origin !== self.location.origin) return false;
     var p = u.pathname.split('/').pop();
+    if (MODULES.indexOf('./' + p) >= 0) return true;
     return p === 'driver.html' || p === 'driver.js' || p === 'driver.css' || p === 'manifest.webmanifest' || p === '';
   } catch (e) { return false; }
 }
