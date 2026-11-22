@@ -97,11 +97,12 @@ from the original console was removed:
 | `docs/SETUP.md` | Plain-English owner guide: Cloudflare Pages, Supabase, Twilio (business number), Square, Google Cloud, and how to switch each on — and off. |
 | `docs/OWNER-DECISIONS.md` | The 14 decisions only the owner can make, each with a recommended default — all 14 decided on the defaults (2026-11-21). |
 
-## Operations build (phase B): eight more add-on modules
+## Operations build (phase B): nine more add-on modules
 
-Eight further modules load after `simple.js` (fixes, quote, ops, ledger, crm,
-recurring, plan, recover — in that order; `recover.js` last so its audit and
-role wrappers sit on top). Each is a self-contained IIFE that wraps console
+Nine further files load after `simple.js` (fixes, quote, ops, ledger, crm,
+recurring, plan, recover, setup — in that order; `recover.js` after the others so
+its audit and role wrappers sit on top, and `setup.js` very last because it
+gathers every module's Settings card). Each is a self-contained IIFE that wraps console
 globals and repairs its own STATE keys on load, so an old backup imports
 unchanged. Cloud sync carries the new records (`calls`, `customers`, `staff`
 tables; `rates`, `ledger`, `invoices`, `crm`, `recurring`, `plan`, `audit`,
@@ -117,6 +118,26 @@ tables; `rates`, `ledger`, `invoices`, `crm`, `recurring`, `plan`, `audit`,
 | `recurring.js` | **Standing rides**: "Repeat this ride" creates weekday children 14 days ahead, idempotently, through the eligibility gate. |
 | `plan.js` | **Plan panel** (Money → Business): weekly scorecard, 13-week cash sheet, five-route price test. The firm's own bank and payroll figures are typed in, never stored in this public repository. |
 | `recover.js` | **Prove recovery**: TLC export lint (Completed trips only, missing fields block the file), named staff with hashed PINs and roles (owner / dispatcher / bookkeeper), audit ring buffer, AES-GCM encrypted backup with a sandbox restore test, printable outage sheet. |
+| `setup.js` (+ `setup.css`) | **Settings, under one roof**: sorts every Settings card into sections, adds a go-live checklist with a Needs-you reminder, an owner-only settings bundle (export / import with a preview) and a printable station sheet. Loads last. |
+
+### Settings, under one roof
+
+Settings opens on a **go-live checklist**: one row per thing the station needs
+before the first real day (business details, owner PIN, Square, money defaults,
+rate table, driver papers, win-back list, Plan figures, a recent backup and so
+on), each marked Done, Needs you, Optional or Skipped, with an Open button that
+goes straight to the right field. Below it, every card the console and the
+modules already draw is moved — not copied — into a section (Business, Staff &
+access, Phones & texting, Cloud, Payments & money, Prices, Drivers & vehicles,
+and so on), with a search box and a row of section buttons at the top. Cards that
+live on their own screens (fare tables, roster, settlement, ledger, Plan,
+win-back, standing rides) get a short pointer card with an Open button. While
+anything still needs the owner, the Today screen shows one Needs-you line that
+can be put off for a week ("Not now"). The owner can export the settings to a
+file for another computer (no keys or PIN hashes unless asked), import one after
+seeing exactly what would change, and print a one-page station sheet with keys
+masked. The only new saved data is `settings.setup` (snooze date, last check,
+skipped rows).
 
 Things the owner should know before first load on the production station:
 

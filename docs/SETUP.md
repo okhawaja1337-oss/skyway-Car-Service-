@@ -188,19 +188,84 @@ Decided (owner decision 12): **AeroDataBox** for the pilot; switch to FlightAwar
 
 ## 7. Turning things on in the console (Settings tab)
 
-Turn these on **one at a time**, in this order, and use the console for a day between each.
+Open **Settings** (it asks for the Settings PIN once one is set). The page opens on
+the **Go-live checklist**. Every row says what it checks, shows **Done**,
+**Needs you**, **Optional** or **Skipped**, and has an **Open** button that jumps
+straight to the field or screen that fixes it. Rows marked Optional have a
+**Skip** button for things this station does not need. The top line counts how
+many are done; while anything still needs you, the Today screen shows one
+reminder line (**Not now** hides it for a week).
 
-1. **Cloud (multi-device sync)** card:
-   - Supabase project URL, anon key, location id (`nyc`) → **Save cloud settings** → **Test connection** (must say *Connected*).
-   - **Upload everything now.** Wait for the reconciliation report: every collection must say **match** and every fares-by-month line must match to the cent. If anything differs, press Upload again; if it still differs, stop and call the developer — do not rely on the cloud copy yet.
-   - Tick **Enable cloud sync** → Save. The status dot turns green ("Synced"). From now on every save also goes to the cloud; a second computer with the same settings shows the same board within 10 seconds.
-   - **Dual run for 1–2 weeks:** keep doing the nightly Export/Backup. Open the console on a second computer or phone browser and confirm trips appear both ways.
-2. **Region** card: check time zone, currency, phone code (New York defaults are already filled in).
-3. **Messages** card → **Texting via the business number: ON** (`settings.twilioReady`) once Twilio step 4 is approved. Until then the Text buttons use your own phone.
-4. **Square** card → **Square connected: ON** (`settings.squareConnected`) after step 5 sandbox tests pass; switch `SQUARE_ENV` to `production` first.
-5. **Drivers** tab → **Connect phone** next to each driver (or the driver texts **JOIN** to the business number). Watch the green phone icon and the live pin.
-6. **Automation** toggles (auto-assign cascade, auto-arrived, auto-charge, auto airport fee) — each has an Undo and a "why" line; leave them off for the first week.
-7. **Simple mode** is already **ON for every station** (owner decision 11; `settings.simpleMode = true` on first run) — nothing to switch. Set the 4-digit **admin PIN** (Settings → Admin PIN) **on every station**, or set it once after Cloud sync is on (settings, PIN included, sync to all stations — the PIN lives in settings, which are per browser). Once set, opening **Settings** or **Expert mode** on that station asks for the PIN once per session, so dispatchers stay in Simple mode and the owner unlocks Expert when needed (owner decision 6). Dispatchers only meet the PIN when they open Settings (e.g. to print the cheat sheet); Today/Book/Board/Drivers/Money never ask for it.
+Work down the list in the order it shows. Turn on the big things (Cloud,
+business-number texting, Square card charging) **one at a time**, and use the
+console for a day between each.
+
+- **Business details** — company name, address, phone and TLC base number
+  (B01593). They print on receipts, invoices and the TLC file.
+- **Owner PIN** — set it in Staff, access & activity. Exports, backups, price
+  changes and staff changes ask for it. Without it anyone at the desk can do them.
+  Set it on every station, or once after Cloud is on (settings sync to every
+  station). Simple mode is already on everywhere; Expert mode and Settings sit
+  behind this PIN.
+- **Named dispatchers** (optional) — add each dispatcher by name and role so the
+  activity log shows who did what.
+- **Consent sentence on the cheat sheet** — always Done. Print the cheat sheet;
+  dispatchers say on every phone booking: "By booking you agree to receive ride
+  updates by text; reply STOP to opt out."
+- **Texting route** (optional) — until Cloud is on, texts go out from the
+  phone's SMS app. Business-number texting (Twilio, step 4) comes with Cloud.
+- **Cloud sync** (optional) — Cloud card: Supabase URL, anon key, location id
+  (`nyc`) → **Save cloud settings** → **Test connection** (must say *Connected*).
+  Press **Upload everything now** and wait for the report: every collection must
+  say **match** and every fares-by-month line must match to the cent. If it still
+  differs after a second upload, stop and call the developer. Then tick **Enable
+  cloud sync** → Save; the dot turns green. Keep the nightly backup going and
+  dual-run for 1–2 weeks with a second computer or phone.
+- **Square** — the Square card link (Virtual Terminal) is set. Do the step 5
+  sandbox tests and switch `SQUARE_ENV` to `production` before charging real
+  cards through Cloud.
+- **Money defaults saved** — open Money defaults and press Save once: card hold
+  ×1.2, airport fee $3.50, gratuity 0 % (accounts with their own gratuity keep it).
+  The no-show fee stays a dispatcher button.
+- **Rate table** — prices do not change until you do this. Press **Load proposed
+  rate card**, check the draft on Rates & zones, type the TLC filing date and
+  activate it with the owner PIN.
+- **Fee mode chosen** — in Money defaults, pick flat (each driver's own base fee)
+  or tiers (by fare).
+- **Driver papers** — every active driver needs a TLC number and TLC, DMV and
+  insurance dates (Fleet → roster check). A driver with a lapsed date cannot be
+  put on a ride.
+- **Vehicle papers** — registration and inspection dates for every vehicle.
+  Optional while a vehicle is not required on every job.
+- **Partner base for overflow** (optional) — the partner base record, only needed
+  to send calls you cannot cover to another base.
+- **Call reports** (optional) — export one call report (CSV) from the phone
+  company's portal and import it on the Calls screen; the column map is saved.
+- **Win-back list** — import the list of past riders to call back (Accounts →
+  win-back, Import).
+- **Plan figures** — the bookkeeper types the four private figures on Money →
+  Business → Plan: opening cash, Square credits, baseline net and payroll uplift.
+  They are never stored in the repository.
+- **Google Maps key** — use the firm's own key, not the sample key the app ships
+  with (step 6). Empty is fine: the free map and address service is used.
+- **Driver phones** (optional) — Drivers tab → **Connect phone** next to each
+  driver. The row is Done once a driver has opened the driver page on a phone.
+- **Backup in the last 7 days** — Backup, restore & outage sheet → make an
+  encrypted backup. Keep doing it nightly.
+- **Outage sheet** (optional) — print it once to see it works, then print a
+  fresh one each morning in case the computer dies.
+
+Under the checklist every other setting is sorted into sections (Business,
+Staff & access, Phones & texting, Cloud, Payments & money, Prices, Drivers &
+vehicles, and so on) with a search box at the top. To set up a second computer
+quickly, the owner can **Export settings bundle** here and **Import settings
+bundle** there: it shows every change before you press Apply, and it never
+carries trips, drivers, accounts, the books, PIN hashes, or (unless you tick
+"Include keys") the Google and Cloud keys. **Print station sheet** gives one page
+of every setting, keys masked, to keep with the outage binder.
+
+Leave the automation toggles (auto-assign cascade, auto-arrived, auto-charge,
+auto airport fee) off for the first week; each has an Undo and a "why" line.
 
 ---
 

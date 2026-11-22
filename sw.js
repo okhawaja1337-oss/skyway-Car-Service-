@@ -5,8 +5,8 @@
    Bump CACHE when any of the shell files change.
    The console's add-on modules are listed too so a station that registers this worker
    (https only) keeps them offline; a missing file never fails the install. */
-var CACHE = 'skyway-driver-v3';
-var MODULES = ['./fixes.js', './quote.js', './ops.js', './ledger.js', './crm.js', './recurring.js', './plan.js', './recover.js'];
+var CACHE = 'skyway-driver-v4';
+var MODULES = ['./fixes.js', './quote.js', './ops.js', './ledger.js', './crm.js', './recurring.js', './plan.js', './recover.js', './setup.js', './setup.css'];
 var SHELL = ['./driver.html', './driver.js', './driver.css', './manifest.webmanifest'].concat(MODULES);
 
 self.addEventListener('install', function (ev) {
