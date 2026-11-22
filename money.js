@@ -118,7 +118,8 @@
   }
   function sortNewest(a, b) { var ka = (a.date || '') + ' ' + (a.time || ''), kb = (b.date || '') + ' ' + (b.time || ''); if (ka !== kb) return ka < kb ? 1 : -1; return (b.createdAt || '') < (a.createdAt || '') ? -1 : 1; }
   function unpaid() { return trips().filter(function (t) { return t.status === 'Completed' && isCard(t) && !isPaid(t); }).sort(sortNewest); }
-  function isInvoiced(t) { return !!(t.invoiced || t.invoiceId || (t.invoice && (t.invoice.id || t.invoice.status)) || isPaid(t)); }
+  /* Invoicing (index.html iv_open) stamps t.invoiceNo; older shapes (invoiced / invoiceId / invoice{}) are kept for backward compatibility. */
+  function isInvoiced(t) { return !!(t.invoiceNo || t.invoiced || t.invoiceId || (t.invoice && (t.invoice.id || t.invoice.status)) || isPaid(t)); }
 
   /* ---------- no-show fee (owner decision 4: base fare, card on file, dispatcher button only) ---------- */
   function hasCard(t) {
