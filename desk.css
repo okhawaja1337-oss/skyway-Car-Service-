@@ -118,3 +118,5 @@ body.gold .dk-msg{color:#e8e9ec;border-color:#2a2f38;}
   .dk-selinfo{max-width:100%;margin-left:0;}
 }
 @media print{.dk-top,.dk-bar,.dk-msg,.dk-filter{display:none !important;}}
+/* a job number with a DUE / LATE badge is never cut short: the cell widens instead */
+.dk-grid td:has(.dk-badge){overflow:visible;text-overflow:clip;min-width:84px;}

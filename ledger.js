@@ -186,7 +186,8 @@
     due: 'Due to drivers', duefrom: 'Due from drivers (base fees)', basefee: 'Base fee income',
     cardfee: 'Card fee recovery', deduct: 'Deductions (authorised)', sqfees: 'Square fees',
     reimb: 'Reimbursable expenses', noshow: 'No-show fee income', held: 'Held for passengers (refund due)',
-    ccu: 'Invoice card fee (CCU) income'
+    ccu: 'Invoice card fee (CCU) income',
+    feespay: 'Pass-through fees collected (congestion, zone, airport)'
   };
   function cashAcct(method) { method = String(method || 'cash').toLowerCase(); return method === 'cash' ? ACCT.cash : ACCT.bank; }
   function collectAcct(method) { return method === 'account' ? ACCT.ar : ACCT.square; }
@@ -206,13 +207,13 @@
 
   /* ---------- the sweep: journal lines from trips (idempotent) ---------- */
   function tripRef(t) { return '#' + (t.dispatchNo != null ? t.dispatchNo : ''); }
-  var RIDE_KINDS = { 'fare-collected-office': 1, 'fare-collected-driver': 1, 'tip': 1, 'toll': 1, 'card-fee-recovered': 1 };
+  var RIDE_KINDS = { 'fare-collected-office': 1, 'fare-collected-driver': 1, 'tip': 1, 'toll': 1, 'card-fee-recovered': 1, 'fee': 1 };
   function collected(p) { return p.status === 'paid' || p.status === 'refunded' || p.status === 'noshow-fee'; }
   function collectedAmt(t) { var p = t.payment || {}; if (t.status === 'No-Show' || t.status === 'Canceled' || t.status === 'Disregard') { if (p.amount != null) return round2(p.amount); if (p.amountCents) return round2(Number(p.amountCents) / 100); if (p.status === 'paid') return officeTotal(t); return 0; } return officeTotal(t); }
   /* What the journal should hold for this trip right now: key → line spec. */
   function desiredLines(t) {
     var out = {}; if (!t || !t.id || t._hist) return out;
-    var p = t.payment || {}, date = isDate(t.date) ? t.date : todayStr(), fare = round2(t.fare), tolls = round2(t.tolls), tip = round2(t.tip);
+    var p = t.payment || {}, date = isDate(t.date) ? t.date : todayStr(), fare = round2(t.fare), tolls = round2(t.tolls), tip = round2(t.tip), fees = round2(t.feesTotal);   // fees: pass-through fees tolls.js puts on the trip (congestion, zone, airport)
     var base = { tripId: t.id, driverId: t.driverId || '', accountId: t.accountId || '', date: date, ref: tripRef(t) };
     function want(kind, amount, extra) { amount = round2(amount); if (!(amount > 0)) return; var key = t.id + ':' + kind + (extra && extra.sub ? ':' + extra.sub : ''); out[key] = Object.assign({}, base, { kind: kind, amount: amount, key: key }, extra || {}); }
     function office(method, memo) {
@@ -220,13 +221,14 @@
       want('fare-collected-office', fare, { dr: dr, cr: ACCT.due, method: method, memo: memo || '' });
       if (tip > 0) want('tip', tip, { dr: dr, cr: ACCT.due, method: method });
       if (tolls > 0) want('toll', tolls, { dr: dr, cr: ACCT.due, method: method });
+      if (fees > 0) want('fee', fees, { dr: dr, cr: ACCT.feespay, method: method, memo: 'pass-through fees collected with the fare (congestion / zone / airport)' });
       if (method === 'card') { var cf = cardFee(t); if (cf > 0) want('card-fee-recovered', cf, { dr: dr, cr: ACCT.cardfee, method: method, memo: 'card fee kept by the office' }); }
       if (method === 'account') { var g = gratuity(t); if (g > 0) want('tip', g, { dr: dr, cr: ACCT.due, method: method, memo: 'automatic gratuity', sub: 'gratuity' }); }
     }
     if (t.status === 'Completed') {
       if (isAccountTrip(t)) office('account', 'account ride (invoiced)');
       else if (isCard(t)) { if (collected(p)) office('card', 'card ride collected by the office'); }
-      else if (isCash(t) || (p.method === 'cash')) want('fare-collected-driver', fare, { dr: ACCT.drvcash, cr: ACCT.fares, method: 'cash', memo: 'cash fare kept by the driver' + (tolls ? ' (+ ' + money(tolls) + ' tolls)' : '') + (tip ? ' (+ ' + money(tip) + ' tip)' : '') });
+      else if (isCash(t) || (p.method === 'cash')) want('fare-collected-driver', fare, { dr: ACCT.drvcash, cr: ACCT.fares, method: 'cash', memo: 'cash fare kept by the driver' + (tolls ? ' (+ ' + money(tolls) + ' tolls)' : '') + (fees ? ' (+ ' + money(fees) + ' fees)' : '') + (tip ? ' (+ ' + money(tip) + ' tip)' : '') });
     } else if (t.status === 'No-Show' && isCard(t) && collected(p)) {
       var amt = collectedAmt(t);
       if (amt > 0) want('fare-collected-office', amt, { dr: ACCT.square, cr: t.driverId ? ACCT.due : ACCT.noshow, method: 'card', memo: 'no-show fee', sub: 'noshow' });
@@ -547,7 +549,7 @@
   function printStatement(settlementId) { var s = settlementById(settlementId); if (!s) { toast('Settlement not found.', true); return false; } return openPrint(statementHTML(s)); }
 
   /* ---------- refund (owner PIN) ---------- */
-  function officeEntriesFor(t) { return entries().filter(function (e) { return e.tripId === t.id && !e.rev && !e.reversedBy && ['fare-collected-office', 'tip', 'toll', 'card-fee-recovered'].indexOf(e.kind) >= 0; }); }
+  function officeEntriesFor(t) { return entries().filter(function (e) { return e.tripId === t.id && !e.rev && !e.reversedBy && ['fare-collected-office', 'tip', 'toll', 'card-fee-recovered', 'fee'].indexOf(e.kind) >= 0; }); }
   function refundedSoFar(t) { return round2(refundRows(t).reduce(function (a, e) { return a + e.amount; }, 0)); }
   /* One refund = one row per collected line it gives back (refundId shared, refundOf = the line reversed):
      the driver's share (fare, tip, toll) as kind 'refund' Due to drivers → Square clearing, so the driver's
@@ -555,7 +557,7 @@
      card-fee-recovered line (Card fee recovery → Square clearing), so card-fee income and the P&L cash figure
      drop by the fee. A partial refund comes out of the driver's share first, the card fee last.
      Returns a summary row: the fare row's fields with amount = the total refunded now, plus rows[] (the lines). */
-  var REFUND_ORDER = { 'fare-collected-office': 0, tip: 1, toll: 2, 'card-fee-recovered': 3 };
+  var REFUND_ORDER = { 'fare-collected-office': 0, tip: 1, toll: 2, 'card-fee-recovered': 3, fee: 4 };
   function refund(tripId, amount, reason, opts) {
     opts = opts || {};
     var t = typeof tripId === 'string' && !findTrip(tripId) ? tripByNo(tripId) : findTrip(tripId);

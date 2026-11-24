@@ -186,7 +186,7 @@
     var time = fmtTime12(t.time) || 'ASAP', date = fmtDateLong(t.date);
     var dayWord = t.date === today ? 'today' : (t.date === tomorrow ? 'tomorrow' : (date ? 'on ' + date : ''));
     var when = t.date === today ? 'Today ' + time : (t.date === tomorrow ? 'Tomorrow ' + time : (date ? date + ', ' + time : time));
-    var fare = Number(t.fare) || 0, tolls = Number(t.tolls) || 0, tip = Number(t.tip) || 0;
+    var fare = Number(t.fare) || 0, tolls = Number(t.tolls) || 0, tip = Number(t.tip) || 0, fees = Number(t.feesTotal) || 0;   // fees: pass-through fees from tolls.js
     var acct = t.accountId ? (((STATE.accounts || []).filter(function (a) { return a.id === t.accountId; })[0] || {}).name || 'Account') : '';
     var onAccount = isAccountTrip(t);
     var stops = (t.stops || []).filter(function (x) { return x; });
@@ -199,9 +199,10 @@
       stops: stops.map(shortAddr).join(', '), stopsNote: stops.length ? ' Stops: ' + stops.map(shortAddr).join(', ') + '.' : '',
       passenger: t.passenger || 'Passenger', passengerFirst: firstName(t.passenger) || 'there', paxPhone: t.phone || '',
       pax: String(Number(t.pax) || 1), vtype: t.vtype || 'any car',
-      fare: money(fare), tolls: money(tolls), tip: money(tip), total: money(fare + tolls + tip),
+      fare: money(fare), tolls: money(tolls), tip: money(tip), fees: money(fees), total: money(fare + tolls + fees + tip),
+      feesNote: fees > 0 ? ' (incl. ' + money(fees) + ' fees)' : '',
       /* decision 6: same wording as driver.js fareLine() and the server's {fareOrAccount} */
-      fareOrAccount: onAccount ? 'Account — no cash' : money(fare) + ' + tolls',
+      fareOrAccount: onAccount ? 'Account — no cash' : money(fare) + ' + tolls' + (fees > 0 ? ' + ' + money(fees) + ' fees' : ''),
       tollsNote: tolls > 0 ? ' (incl. ' + money(tolls) + ' tolls)' : '',
       payType: onAccount ? (acct ? 'Account: ' + acct : 'Account') : (t.payType || 'Cash'), account: acct,
       notes: t.notes || '', notesNote: t.notes ? ' Notes: ' + String(t.notes).trim() + '.' : '',

@@ -172,7 +172,17 @@ Decided (owner decision 3): the **existing Square account**, one app with sandbo
 3. **Browser key (the one the console already has):** **Credentials → Create credentials → API key** → name `skyway-browser`. **Application restrictions → Websites**: add `https://app.<yourdomain>/*`, `https://<name>.pages.dev/*`, `http://localhost:8080/*`. **API restrictions**: Maps JavaScript, Places (New), Directions, Geocoding. Paste it into the console: **Settings → Google Maps API key → Save**. Then **delete the old key** that was embedded in `index.html` (Credentials → the old key → Delete). The developer removes the old string from the file.
 4. **Server key:** create a second key `skyway-server`. **Application restrictions → None** (or IP addresses if Supabase gives you fixed egress IPs). **API restrictions**: Geocoding, Routes. → Supabase secret `GOOGLE_MAPS_SERVER_KEY`. This key never reaches a browser.
 5. **Quotas & alerts:** APIs & Services → each API → **Quotas** → set a daily cap (e.g. 2,000 Routes requests); **Billing → Budgets & alerts** → a $50/month budget with email alerts.
-6. Test: console → **Settings → Test Google now**, then **Map → Full connection check**.
+6. Test: console → **Settings → Test Google now**, then **Map → Full connection check**. The go-live row **Google key tested** turns Done once Google has answered.
+
+What the key turns on (everything still works without it, on the free maps):
+
+- **Book form route card** — the Google map with the fastest route and up to two other ways, each with miles and minutes; pick one and a distance-priced fare and the tolls follow it. "Open in Google Maps" and "Share route" work even without a key.
+- **Address boxes** — Google place suggestions as you type; the ✓ / ? / ✈ chip next to each address.
+- **Board** — driving ETAs on dispatched jobs and one Needs-you line when a driver will reach the pick-up late (without Google: a straight-line estimate).
+- **Live driver map** (Drivers → Fleet) — on Google tiles; click an on-duty driver to put them on the selected job (driver papers are still checked).
+- **Tolls** — the real road route tells the tolls engine which bridge or tunnel the car takes (without it, the usual crossing for that trip is used).
+
+The chip on the route card says **Google on**, **Google off (free maps)**, **Key invalid** or **No internet**. To stop all route calls to Google (for example to stay inside the free credit), pick **Free maps** on **Settings → Maps & live map**; address suggestions still use the key. Google never works from a `file://` page, so run the app at `http://localhost:8080` or on the hosted address.
 
 ---
 
@@ -248,6 +258,14 @@ console for a day between each.
   They are never stored in the repository.
 - **Google Maps key** — use the firm's own key, not the sample key the app ships
   with (step 6). Empty is fine: the free map and address service is used.
+- **Google key tested** (optional) — press **Test Google** once after saving
+  your own key. It turns Done when Google answers. It never says Needs you: the
+  free maps always work.
+- **Tolls & fees rules confirmed** — quotes add tolls, the NYS congestion
+  surcharge, the MTA congestion zone charge and the $3.50 airport fee on top of
+  the fare. Check with the bookkeeper that Skyway pays each of these over, turn
+  off on **Prices → Tolls & fees** any you do not collect, then press **Confirm**
+  (owner PIN). Changing those switches later asks for the confirmation again.
 - **Driver phones** (optional) — Drivers tab → **Connect phone** next to each
   driver. The row is Done once a driver has opened the driver page on a phone.
 - **Backup in the last 7 days** — Backup, restore & outage sheet → make an

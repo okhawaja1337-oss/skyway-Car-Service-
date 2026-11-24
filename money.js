@@ -114,8 +114,9 @@
   }
   function total(t) {
     t = findTrip(t); if (!t) return 0;
-    return round2((Number(t.fare) || 0) + (Number(t.tolls) || 0) + (Number(t.tip) || 0) + cardFee(t) + gratuity(t));
+    return round2((Number(t.fare) || 0) + (Number(t.tolls) || 0) + (Number(t.feesTotal) || 0) + (Number(t.tip) || 0) + cardFee(t) + gratuity(t));   // feesTotal: pass-through fees from tolls.js
   }
+  total.feesIncluded = true;   // tolls.js reads this flag so it does not add t.feesTotal a second time
   function sortNewest(a, b) { var ka = (a.date || '') + ' ' + (a.time || ''), kb = (b.date || '') + ' ' + (b.time || ''); if (ka !== kb) return ka < kb ? 1 : -1; return (b.createdAt || '') < (a.createdAt || '') ? -1 : 1; }
   function unpaid() { return trips().filter(function (t) { return t.status === 'Completed' && isCard(t) && !isPaid(t); }).sort(sortNewest); }
   /* Invoicing (index.html iv_open) stamps t.invoiceNo; older shapes (invoiced / invoiceId / invoice{}) are kept for backward compatibility. */
@@ -176,7 +177,7 @@
     trips().forEach(function (t) {
       if (t.status === 'Canceled' || t.status === 'Disregard') return;
       if (t.date === td) {
-        booked += (Number(t.fare) || 0) + (Number(t.tolls) || 0);
+        booked += (Number(t.fare) || 0) + (Number(t.tolls) || 0) + (Number(t.feesTotal) || 0);
         if (t.status === 'Completed') {
           if (isCard(t) && isPaid(t)) card += total(t);
           if (t.payType === 'Cash') cash += total(t);

@@ -385,6 +385,7 @@
     else if (p.editing && editingNow() !== p.editing) updated = findTrip(p.editing);
     if (!made && !updated) return;
     lastSave = { at: Date.now(), sig: p.sig };
+    passed = null;   // a form that just booked must be checked again if it is typed a second time (duplicate guard)
     b.classList.add('smooth-busy'); b.setAttribute('aria-disabled', 'true');
     setTimeout(function () { b.classList.remove('smooth-busy'); b.removeAttribute('aria-disabled'); }, 800);
     resetForm();

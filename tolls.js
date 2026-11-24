@@ -1033,12 +1033,14 @@
   }
   function feesOf(t) { var f = t && typeof t === 'object' ? num(t.feesTotal) : 0; return f > 0 ? round2(f) : 0; }
   function moneyTotalNoFees(t) {
-    try { var M = window.Money, fn = M && M.total; if (fn) { while (fn.__tollsWrapped && fn._orig) fn = fn._orig; return round2(num(fn(t))); } } catch (e) {}
+    try { var M = window.Money, fn = M && M.total; if (fn) { while (fn.__tollsWrapped && fn._orig) fn = fn._orig; var tv = round2(num(fn(t))); return fn.feesIncluded ? round2(tv - feesOf(t)) : tv; } } catch (e) {}
     var cf = 0; try { if (t.cardFee != null) cf = num(t.cardFee); } catch (e) {}
     return round2(num(t.fare) + num(t.tolls) + num(t.tip) + cf);
   }
+  function moneyNative() { try { var fn = window.Money && window.Money.total; while (fn && fn.__tollsWrapped && fn._orig) fn = fn._orig; return !!(fn && fn.feesIncluded); } catch (e) { return false; } }
   function feeText(s, t) {
     var fees = feesOf(t); if (!fees || typeof s !== 'string' || !s) return s;
+    if (moneyNative()) return s;   /* money.js and messages.js already count the fees in every amount and text */
     if (s.indexOf(cmoney(fees) + ' fees') >= 0) return s;
     var fare = num(t.fare), A = '\u0001', B = '\u0002', C = '\u0003';
     var out = s.split(cmoney(fare) + ' + tolls').join(A);
@@ -1062,7 +1064,7 @@
     var nb = feeText(body, t); return nb === body ? href : m[1] + encodeURIComponent(nb);
   }
   function wrapCollect() {
-    hookObj(window.Money, 'total', function (orig) { return function (t) { var v = orig.apply(this, arguments); try { var tr = findTrip(t); var f = feesOf(tr); if (f) v = round2(num(v) + f); } catch (e) {} return v; }; });
+    hookObj(window.Money, 'total', function (orig) { return function (t) { var v = orig.apply(this, arguments); if (orig.feesIncluded) return v; try { var tr = findTrip(t); var f = feesOf(tr); if (f) v = round2(num(v) + f); } catch (e) {} return v; }; });
     hookObj(window.Messages, 'render', function (orig) { return function (key, trip) { var s = orig.apply(this, arguments); try { s = feeText(s, findTrip(trip)); } catch (e) {} return s; }; });
     hookObj(window.Messages, 'vars', function (orig) {
       return function (trip) {

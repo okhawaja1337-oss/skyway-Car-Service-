@@ -102,7 +102,8 @@ from the original console was removed:
 Nine further files load after `simple.js` (fixes, quote, ops, ledger, crm,
 recurring, plan, recover, setup — in that order; `recover.js` after the others so
 its audit and role wrappers sit on top, and `setup.js` very last because it
-gathers every module's Settings card). Each is a self-contained IIFE that wraps console
+gathers every module's Settings card; the five call-desk files of phase C load
+between `recover.js` and `setup.js`). Each is a self-contained IIFE that wraps console
 globals and repairs its own STATE keys on load, so an old backup imports
 unchanged. Cloud sync carries the new records (`calls`, `customers`, `staff`
 tables; `rates`, `ledger`, `invoices`, `crm`, `recurring`, `plan`, `audit`,
@@ -205,6 +206,76 @@ carries it. The ones a dispatcher will notice:
   that can't unpack the built-in archive.
 - **Phones:** no sideways page scroll at 390 px, 16 px inputs (no iOS zoom),
   finger-sized buttons on touch screens.
+
+## Call-desk build (phase C): five more add-on modules
+
+Five more files load after `recover.js` and before `setup.js`, in this order:
+`tolls.js`, `maps.js`, `callerhist.js`, `desk.js`, `smooth.js` (plus the
+`maps.css` and `desk.css` links). `index.html` now loads twenty add-on files
+after its own script: region, messages, driver-link, money, sync, simple,
+fixes, quote, ops, ledger, crm, recurring, plan, recover, tolls, maps,
+callerhist, desk, smooth, setup. Like the others, each one wraps the console's
+own functions, repairs its own settings on load, and skips its screens in
+pop-out windows. Every one works with no internet and no Google key. None of
+them adds a new top-level record, so Cloud sync needed no change (their
+settings travel with the settings row).
+
+| File | What it adds |
+|------|--------------|
+| `tolls.js` | **Prices include tolls and fees.** Works out the bridge and tunnel tolls and the NYS congestion, MTA congestion zone and airport fees for every quote, shows them line by line, and lets the dispatcher type over them. Settings card **Tolls & fees** (Prices). |
+| `maps.js` (+ `maps.css`) | **Google Maps end to end**: a route card in the Book form, a live driver map, ETAs on the board, address chips, a Google health chip. Free maps and an offline route diagram when there is no Google. Settings card **Maps & live map** (Maps & region). |
+| `callerhist.js` | **Caller history**: a caller's past trips drop down under the phone box; one click books the trip again. Settings card **Caller history** (Phones & texting). |
+| `desk.js` (+ `desk.css`) | **Desk**: the Trips and Reservations grids up at once, like the old program, with cells you can edit in place. Settings card **Trips & reservations desk** (Display & modes). |
+| `smooth.js` | **Smoothness**: small fixes that save clicks on every call (cursor goes where you type next, double-click books once, duplicate-booking warning, next-pickup line, tap-to-call numbers and more), each with its own switch. Settings card **Smoothness** (Display & modes). |
+
+### Prices include tolls and fees
+
+Every quote now adds the tolls for the usual crossing (or the real road route
+when one is known) and the fees the trip owes: the NYS congestion surcharge
+below 96th St, the MTA congestion zone charge at or below 60th St, and the
+$3.50 Port Authority fee at the airports. The chip next to the Tolls box says
+where the figure came from; click it to see each line. A typed figure wins until
+an address changes. The readout, receipt, Money tab, pay link and texts all use
+the same total, and the ledger books the fees collected on a ride as their own
+line ("Pass-through fees collected") so the journal matches what Square or
+the driver took in. If the driver reports different tolls, type them in the edit
+box's **Tolls paid** field; the board shows the difference from the quote.
+Nothing is added twice when rate version 2 already carries the Manhattan
+charges. **Owner:** the go-live checklist has a row **Tolls & fees rules
+confirmed**. Check that Skyway pays these fees over before you confirm; any fee
+you do not collect can be switched off on the Tolls & fees card.
+
+### Desk
+
+On the Dispatch tab (Expert) and the Board (Simple) the **Trips** grid (today's
+jobs that are due or running, plus today's finished ones) and the
+**Reservations** grid (everything booked ahead, by date) sit together, stacked
+or side by side. Click a row to select it, double-click or Enter to open it,
+right-click for the job menu. Double-click a cell (or F2) to change the driver,
+status, time, phone, addresses or fare in place. Every change goes through the
+same checks as the edit box: driver papers, the price check, tolls, the
+activity log. A reservation moves to Trips when the board says it is due.
+
+### Caller history
+
+When a known number rings on an F-line, is typed in the Phone box, or comes
+from a lookup, the caller's usual routes and recent trips drop down under it.
+Enter or a click books the trip again as a new ride and prices it fresh; **R**
+books the return trip, **D** keeps the pick-up and asks for a new drop-off.
+Rides already booked ahead are marked so they are not booked twice. If a
+half-typed booking is on the form, it is set aside, not lost ("Bring it back").
+No driver is ever put on a ride from the list.
+
+### Google Maps
+
+With a working Google key (run the app at `http://localhost`, see above), the
+Book form shows the Google route with up to two other ways and their miles and
+minutes, address boxes suggest Google places, and the board shows driving ETAs
+for dispatched jobs, with one Needs-you line when a driver will be late. Without
+Google, the same screens use the free maps or a simple route diagram, with
+straight-line distances. **Settings → Maps & live map → Free maps** stops all
+route calls to Google. The checklist row **Google key tested** turns Done after
+**Test Google** answers once.
 
 ## Earlier improvements
 

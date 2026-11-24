@@ -480,7 +480,7 @@
       var paid = (res.tolls || []).map(function (x) { return x.short || x.label; }), free = res.free || [];
       var how = ' <span class="maps-src">(' + (res.confidence === 'route' ? 'from the route' : 'usual way') + ')</span>';
       if (!paid.length && !free.length) return 'Crossings: none with a toll' + how;
-      return 'Crossings: ' + esc(paid.concat(free.map(function (x) { return x + ' (free)'; })).join(', ')) + how;
+      return 'Crossings: ' + esc(paid.concat(free.map(function (x) { return /\(free\)\s*$/.test(x) ? x : x + ' (free)'; })).join(', ')) + how;
     } catch (e) { return ''; }
   }
   function baseCoords() {
@@ -714,6 +714,7 @@
       /* dispTime has no date: a send time well after the pickup (sent 23:55 for 00:05) was the evening before */
       var ms = d.getTime(), tq = String(t.time || '').split(':'), pk = new Date(p[0], p[1] - 1, p[2], +tq[0] || 0, +tq[1] || 0, 0).getTime();
       if (isFinite(pk) && ms - pk > 3600000) ms -= 86400000;
+      if (ms > Date.now() + 5 * 60000) ms -= 86400000;   // a send time cannot be in the future: it was yesterday
       return ms;
     } catch (e) { return null; }
   }
@@ -979,7 +980,9 @@
   }
   function fillTripSel(sel) {
     var list = openTrips();
-    if (SEL.trip == null || (SEL.trip && !list.some(function (t) { return t.id === SEL.trip; }))) { var unas = list.filter(function (t) { return !t.driverId; })[0]; SEL.trip = unas ? unas.id : (list[0] ? list[0].id : ''); }
+    /* a trip asked for by name (Maps.selectTrip) stays the target even when it is finished, so a pin click refuses it
+       instead of quietly giving another trip to the driver */
+    if (SEL.trip == null || (SEL.trip && SEL.trip !== SEL.asked && !list.some(function (t) { return t.id === SEL.trip; }))) { var unas = list.filter(function (t) { return !t.driverId; })[0]; SEL.trip = unas ? unas.id : (list[0] ? list[0].id : ''); }
     var h = '<option value="">— none —</option>' + list.map(function (t) { var pk = pickupMs(t); return '<option value="' + esc(t.id) + '"' + (t.id === SEL.trip ? ' selected' : '') + '>#' + esc(t.dispatchNo) + ' ' + esc(pk ? hm(new Date(pk)) : (t.time || 'ASAP')) + ' · ' + esc(shortA(t.puAddr)) + (t.status === 'Dispatched' ? ' (out now)' : t.driverId ? ' (has a driver)' : '') + '</option>'; }).join('');
     if (sel && sel.innerHTML !== h && document.activeElement !== sel) sel.innerHTML = h;
     if (sel && document.activeElement !== sel) sel.value = SEL.trip || '';
@@ -1243,7 +1246,7 @@
     routeFor: routeFor, currentRoute: currentRoute, routeGeo: routeGeo, driverMap: driverMap, eta: eta, status: status,
     googleDirUrl: googleDirUrl, refresh: refreshAll, checkGoogle: checkGoogle, addrConfidence: addrConfidence,
     lateList: function () { computeLate(); return LATE.slice(); }, assignFromMap: pinClick,
-    selectTrip: function (id) { SEL.trip = id == null ? null : String(id); renderDriverPanels(true); }, compact: compact, health: health,
+    selectTrip: function (id) { SEL.trip = id == null ? null : String(id); SEL.asked = SEL.trip && findTrip(SEL.trip) ? SEL.trip : null; renderDriverPanels(true); }, compact: compact, health: health,
     settings: function () { return MS(); }
   };
 
