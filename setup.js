@@ -92,6 +92,7 @@
     { id: 'recoverStaff', head: 'staff, access & activity', sec: 'staff', rank: 10 },
     { id: 'setupPhone', sec: 'phones', rank: 10 },
     { id: 'msgTplPanel', head: 'messages', sec: 'phones', rank: 20 },
+    { id: 'chSettings', head: 'caller history', sec: 'phones', rank: 30 },
     { id: 'cloudPanel', head: 'cloud (multi-device sync)', sec: 'cloud', rank: 10 },
     { id: 'moneySettings', head: 'money', exact: true, sec: 'money', rank: 10 },
     { id: 'fixesMoneyDefaults', head: 'money defaults', sec: 'money', rank: 20 },
@@ -101,6 +102,7 @@
     { id: 'setupPtrLedger', sec: 'money', rank: 60 },
     { id: 'quoteVersions', head: 'fare table versions', sec: 'prices', rank: 10 },
     { id: 'setupPtrRates', sec: 'prices', rank: 20 },
+    { id: 'tollsPanel', head: 'tolls & fees', sec: 'prices', rank: 30 },
     { id: 'opsSettings', head: 'eligibility & partner base', sec: 'drivers', rank: 10 },
     { id: 'opsRoster', head: 'roster check', sec: 'drivers', rank: 20 },
     { id: 'setupPtrRoster', sec: 'drivers', rank: 30 },
@@ -112,12 +114,15 @@
     { id: 'planPanel', head: 'plan', exact: true, sec: 'plan', rank: 10 },
     { id: 'setupPtrPlan', sec: 'plan', rank: 20 },
     { id: 'setupMaps', sec: 'maps', rank: 10 },
+    { id: 'mapsPanel', head: 'maps & live map', sec: 'maps', rank: 15 },
     { id: 'regionPanel', head: 'region', exact: true, sec: 'maps', rank: 20 },
     { head: 'backup & data', sec: 'backup', rank: 10 },
     { id: 'recoverBackup', head: 'backup, restore & outage sheet', sec: 'backup', rank: 20 },
     { id: 'setupBundle', sec: 'backup', rank: 30 },
     { head: 'import from your old system', sec: 'imports', rank: 10 },
-    { id: 'simplePanel', head: 'simple mode', exact: true, sec: 'display', rank: 10 }
+    { id: 'simplePanel', head: 'simple mode', exact: true, sec: 'display', rank: 10 },
+    { id: 'deskSettings', head: 'trips & reservations desk', sec: 'display', rank: 40 },
+    { id: 'smoothPanel', head: 'smoothness', sec: 'display', rank: 45 }
   ];
   /* head text without its hint span, lower case, leading symbols (↻, emoji) removed */
   function headText(panel) {
@@ -372,6 +377,12 @@
     rows.push(row('plan', 'Plan figures', pi.have === pi.of ? 'done' : 'needs', pi.have === pi.of ? 'The four private figures are typed in.' : pi.have + ' of 4 private figures typed in (opening cash, Square credits, baseline net, payroll uplift). The bookkeeper types them.', { label: 'Open', go: 'plan' }));
     var gk = str(s.gmapkey), sk = sampleKey(), sample = !!(gk && sk && gk === sk);
     rows.push(row('gmap', 'Google Maps key', gk && !sample ? 'done' : (sample ? 'needs' : 'optional'), sample ? 'Still the sample key that ships with the app. Use your own key.' : gk ? 'Your own key is set.' : 'Not set: the free map and address service is used.', { label: 'Open', el: 'setupMaps' }));
+    var gt = gtestState();
+    rows.push(row('gtest', 'Google key tested', gt.status, gt.reason, { label: 'Open', el: 'mapsPanel', fallback: 'setupMaps' }, gt.status !== 'done' && str(settings().gmapkey) ? { label: 'Test Google', click: 's_gtest' } : null));
+    if (window.Tolls && window.Tolls._loaded) {
+      var tf = tollsFeesState(acked);
+      rows.push(row('tollsfees', 'Tolls & fees rules confirmed', tf.ok ? 'done' : 'needs', tf.reason, { label: 'Open', el: 'tollsPanel' }, tf.ok ? null : { label: 'Confirm', go: 'tollsok' }));
+    }
     var ph = phoneDrivers();
     rows.push(row('phones', 'Driver phones', ph ? 'done' : 'optional', ph ? ph + ' driver phone' + (ph === 1 ? '' : 's') + ' connected.' : 'No driver has opened the driver page on a phone yet.', { label: 'Open', go: 'fleet' }));
     var lb = lastBackupAt(), fresh = lb && daysAgo(lb) <= 7;
@@ -379,6 +390,41 @@
     rows.push(row('outage', 'Outage sheet', outagePrinted() ? 'done' : 'optional', outagePrinted() ? 'Printed at least once. Print a fresh one each morning.' : 'A paper copy of today\'s and tomorrow\'s trips, in case the computer dies.', { label: 'Print outage sheet', go: 'outage' }));
     rows.forEach(function (r) { if (r.status === 'optional' && acked[r.key]) r.status = 'skipped'; });
     return rows;
+  }
+  /* Google key tested (never 'needs': free maps always work; maps.js raises its own Needs-you line when Google keeps failing). maps.js keeps the last Test Google / start-up answer per computer (localStorage skyway_maps_health) */
+  function gtestState() {
+    var gk = str(settings().gmapkey), sk = sampleKey();
+    if (!gk) return { status: 'optional', reason: 'No Google key: free maps and the offline route diagram are used.' };
+    if (sk && gk === sk) return { status: 'optional', reason: 'Put your own key in first, then press Test Google.' };
+    var h = null; try { h = JSON.parse(localStorage.getItem('skyway_maps_health') || 'null'); } catch (e) { h = null; }
+    var st = null; try { if (window.Maps && typeof window.Maps.status === 'function') st = window.Maps.status(); } catch (e) { st = null; }
+    if (st && st.mode === 'invalid') return { status: 'optional', reason: 'Google did not accept the key: free maps are used. Check the key and the allowed web addresses, then test again.' };
+    if ((h && h.last === 'ok') || (st && st.loaded)) return { status: 'done', reason: 'Google answered' + (h && h.at ? ' on ' + String(h.at).slice(0, 10) : '') + ': map, address search and driving times use Google.' };
+    return { status: 'optional', reason: 'Press Test Google once to make sure the key works. Until then free maps are used.' };
+  }
+  /* Tolls & fees: the owner confirms what the quote adds on top of the fare; a change to those switches asks again */
+  function tollsFeesSig() {
+    var t = settings().tolls; t = t && typeof t === 'object' ? t : {};
+    return ['includeInQuote', 'chargeCongestion', 'chargeCrz', 'chargePaFee'].map(function (k) { return t[k] === false ? '0' : '1'; }).join('') + (t.rateType === 'tollsByMail' ? 'm' : 'e');
+  }
+  function tollsFeesState(acked) {
+    var t = settings().tolls; t = t && typeof t === 'object' ? t : {};
+    var on = [];
+    if (t.includeInQuote !== false) on.push('tolls');
+    if (t.chargeCongestion !== false) on.push('the NYS congestion surcharge');
+    if (t.chargeCrz !== false) on.push('the MTA congestion zone charge');
+    if (t.chargePaFee !== false) on.push('the airport fee');
+    var list = on.length ? on.join(', ').replace(/, ([^,]*)$/, ' and $1') : 'nothing';
+    var ok = !!(acked && acked.tollsfees && acked.tollsfeesSig === tollsFeesSig());
+    return { ok: ok, reason: ok ? 'Confirmed ' + String(acked.tollsfees).slice(0, 10) + '. Quotes add ' + list + ' on top of the fare.'
+      : 'Quotes now add ' + list + ' on top of the fare. Check that Skyway pays these over, then press Confirm (owner).' };
+  }
+  function confirmTolls() {
+    ownerOK('confirm tolls and fees').then(function (ok) {
+      if (!ok) return;
+      var u = setupState(); u.acked.tollsfees = nowISO(); u.acked.tollsfeesSig = tollsFeesSig(); doSave(); refresh();
+      toast('Tolls and fees confirmed.');
+    });
   }
   function squareViaCloud() { try { var c = window.Cloud; return !!(c && typeof c.fn === 'function' && c.enabled() && typeof c.configured === 'function' && c.configured()); } catch (e) { return false; } }
   function consentText() { try { if (window.Messages && typeof window.Messages.consentSentence === 'string' && window.Messages.consentSentence) return window.Messages.consentSentence; } catch (e) {} return 'By booking you agree to receive ride updates by text; reply STOP to opt out.'; }
@@ -420,6 +466,7 @@
       case 'plan': openPlan(); break;
       case 'fleet': go('fleet', 'driverBody'); break;
       case 'outage': printOutage(); break;
+      case 'tollsok': confirmTolls(); break;
     }
   }
   function openRates() { try { if (window.Quote && typeof window.Quote.openRates === 'function') { window.Quote.openRates(); return; } } catch (e) {} go('pricing', 'quoteVersions'); }

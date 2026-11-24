@@ -6,6 +6,8 @@
 <title>Skyway Dispatch Console</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" onerror="this.onerror=null;this.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';">
 <link rel="stylesheet" href="simple.css">
+<link rel="stylesheet" href="maps.css">
+<link rel="stylesheet" href="desk.css">
 <link rel="stylesheet" href="setup.css">
 <style>
   :root{
@@ -17914,7 +17916,7 @@ setInterval(()=>{if($('view-dispatch')&&$('view-dispatch').classList.contains('a
 <script src="simple.js"></script>
 <!-- add-on modules: each is an IIFE that wraps the console's globals and has a load guard.
      Order matters: fixes.js and quote.js (pricing) before ledger.js/plan.js (money), ops.js before
-     anything that assigns a driver, recover.js LAST so its audit/role wrappers sit on top of the chain. -->
+     anything that assigns a driver, recover.js after the pricing and money modules so its audit/role wrappers sit on top of them. -->
 <script src="fixes.js"></script>
 <script src="quote.js"></script>
 <script src="ops.js"></script>
@@ -17923,6 +17925,13 @@ setInterval(()=>{if($('view-dispatch')&&$('view-dispatch').classList.contains('a
 <script src="recurring.js"></script>
 <script src="plan.js"></script>
 <script src="recover.js"></script>
+<!-- the call-desk modules: prices with tolls and fees, Google Maps, caller history, the two-grid desk, smoothness fixes.
+     tolls.js first (maps.js and callerhist.js read Tolls), then maps.js, callerhist.js, desk.js, smooth.js. -->
+<script src="tolls.js"></script>
+<script src="maps.js"></script>
+<script src="callerhist.js"></script>
+<script src="desk.js"></script>
+<script src="smooth.js"></script>
 <!-- setup.js after every module: it wraps their save/render hooks and gathers their Settings panels into one hub. -->
 <script src="setup.js"></script>
 </body>

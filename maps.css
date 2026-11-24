@@ -1,0 +1,55 @@
+/* Skyway — maps.css: route card, driver map, ETA chips, address chips (maps.js) */
+.maps-own #mapDisp, .maps-own #dispDiagram { display: none !important; }
+.maps-card { margin-top: 8px; border: 1px solid var(--line, #d6dbe1); border-radius: 6px; padding: 8px; background: var(--panel, #fff); }
+.maps-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+.maps-view { margin-bottom: 6px; }
+.maps-gmap, .maps-lmap { width: 100%; height: 280px; border: 1px solid var(--line, #d6dbe1); background: #e7edf2; }
+.maps-diagram { width: 100%; max-height: 220px; display: block; border: 1px solid var(--line, #d6dbe1); }
+.maps-rdlist { margin-top: 6px; font-size: 12.5px; }
+.maps-rd { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; }
+.maps-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; display: inline-block; }
+.maps-dot.maps-pu { background: #1b7a43; } .maps-dot.maps-do { background: #a4161a; } .maps-dot.maps-stop { background: #c9a227; }
+.maps-miss { color: #a4161a; font-size: 11.5px; }
+.maps-empty { padding: 14px; color: var(--muted, #6b7280); font-size: 13px; }
+.maps-alts { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+.maps-alt { font: inherit; font-size: 12px; padding: 4px 8px; border: 1px solid #b9c2cc; border-radius: 14px; background: #f5f7f9; cursor: pointer; color: #333; }
+.maps-alt.on { background: #13315c; border-color: #13315c; color: #fff; }
+.maps-alt:focus-visible, .maps-achip:focus-visible, .maps-sugg button:focus-visible { outline: 2px solid #c9a227; outline-offset: 1px; }
+.maps-facts { font-size: 13px; line-height: 1.5; }
+.maps-fact { margin: 2px 0; }
+.maps-src { color: var(--muted, #6b7280); font-size: 11.5px; }
+.maps-warn { color: #8a5a00; }
+.maps-links { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+.maps-chip { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; text-transform: none; letter-spacing: 0; vertical-align: middle; }
+.maps-st-google { background: #dff3e6; color: #155f34; }
+.maps-st-free { background: #e8edf3; color: #13315c; }
+.maps-st-offline { background: #eee; color: #555; }
+.maps-st-invalid { background: #fbe3e3; color: #7e1114; }
+/* address chips */
+.maps-achip { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font: inherit; font-size: 11px; font-weight: 700; border: 0; border-radius: 9px; padding: 1px 7px; cursor: default; line-height: 16px; }
+.maps-achip[data-k="ok"] { background: #dff3e6; color: #155f34; }
+.maps-achip[data-k="air"] { background: #e3ebf7; color: #13315c; }
+.maps-achip[data-k="unk"] { background: #fff1cc; color: #7a5200; cursor: pointer; }
+.maps-achip[data-k="wait"] { background: #eee; color: #666; }
+.maps-sugg { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0 6px; font-size: 12px; }
+.maps-sugg-h { color: #7a5200; }
+.maps-sugg-i { font: inherit; font-size: 12px; border: 1px solid #d9c27a; background: #fffaf0; border-radius: 4px; padding: 2px 6px; cursor: pointer; text-align: left; }
+.maps-sugg-x { font: inherit; border: 0; background: none; cursor: pointer; font-size: 14px; color: #666; }
+/* board ETA */
+.maps-eta { margin-top: 3px; font-size: 11.5px; font-weight: 700; color: #155f34; background: #e6f4ea; border-radius: 4px; padding: 1px 5px; text-align: center; white-space: nowrap; }
+.maps-eta.late { color: #7e1114; background: #fbe3e3; }
+/* driver map */
+.maps-drvbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; }
+.maps-lbl { font-size: 13px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: 100%; min-width: 0; }
+.maps-drvsel { width: auto; max-width: min(340px, 100%); min-width: 0; flex: 0 1 auto; }
+.maps-eta.stale { color: #4a4f57; background: #eceef1; font-style: italic; }
+.maps-drvtbl [aria-disabled="true"] { opacity: .7; cursor: default; }
+.maps-drvmap .maps-gmap, .maps-drvmap .maps-lmap { height: 320px; }
+.maps-drvsvg { width: 100%; max-height: 300px; display: block; border: 1px solid var(--line, #d6dbe1); }
+.maps-age { font-weight: 700; }
+.maps-age.fresh { color: #1b7a43; } .maps-age.mid { color: #c98a00; } .maps-age.old, .maps-age.none { color: #8a8f98; }
+.maps-drvlist { margin-top: 8px; overflow-x: auto; }
+.maps-drvtbl td, .maps-drvtbl th { font-size: 12.5px; }
+.maps-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 13px; }
+.maps-row input[type=checkbox] { width: auto; }
+@media (max-width: 640px) { .maps-gmap, .maps-lmap { height: 220px; } .maps-drvsel { max-width: 100%; } }

@@ -1,0 +1,120 @@
+/* ===================================================================
+   desk.css — Trips & Reservations desk (desk.js)
+   Two dense classic grids (Trips today / Reservations ahead), stacked or
+   side by side, with a draggable splitter.  Colours follow the theme
+   variables the console already defines (body.light / body.gold / :root).
+   =================================================================== */
+.dk{border:1px solid var(--line,#c9cfd8);background:var(--paper,#fff);border-radius:6px;margin:0 0 12px;display:flex;flex-direction:column;min-width:0;max-width:100%;}
+.dk *{box-sizing:border-box;}
+.dk-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 8px;background:var(--head,#eef2f8);border-bottom:1px solid var(--line,#c9cfd8);font-size:12px;border-radius:6px 6px 0 0;}
+.dk-title{font-weight:800;letter-spacing:.5px;text-transform:uppercase;font-size:12px;color:var(--ink,#1f1f1f);margin-right:6px;}
+.dk-clock{font-family:Consolas,'Courier New',monospace;color:var(--muted,#5b5b5b);}
+.dk-top .dk-sp{flex:1;}
+.dk-tbtn{font:inherit;font-size:12px;padding:3px 9px;border:1px solid #8a8a8a;border-radius:3px;background:linear-gradient(#fdfdfd,#e4e4e4);color:#111;cursor:pointer;}
+.dk-tbtn:hover{background:linear-gradient(#fff,#eee);}
+.dk-tbtn:focus-visible,.dk-bar button:focus-visible{outline:2px solid #1c5b9c;outline-offset:1px;}
+.dk-tbtn[aria-pressed="true"]{background:#0a246a;color:#fff;border-color:#0a246a;}
+
+.dk-body{display:flex;flex-direction:column;height:clamp(440px,calc(100vh - 170px),1600px);min-height:0;min-width:0;}
+.dk.dk-side .dk-body{flex-direction:row;}
+.dk-pane{display:flex;flex-direction:column;min-height:0;min-width:0;flex:1 1 0;overflow:hidden;}
+.dk-pane.dk-first{flex:0 0 auto;}
+.dk-phead{display:flex;align-items:center;gap:8px;padding:3px 8px;background:#0a246a;color:#fff;font-size:12px;font-weight:700;letter-spacing:.4px;flex:0 0 auto;}
+.dk-phead .dk-n{font-weight:400;opacity:.85;font-family:Consolas,'Courier New',monospace;}
+.dk-phead .dk-sp{flex:1;}
+.dk-filter{font:12px Consolas,'Courier New',monospace;padding:2px 6px;width:150px;max-width:40vw;border:1px solid #9bb6e0;border-radius:3px;background:#fff;color:#111;}
+.dk-scroll{flex:1 1 auto;overflow:auto;min-height:0;outline:none;position:relative;}
+.dk-scroll:focus-visible{box-shadow:inset 0 0 0 2px #1c5b9c;}
+.dk-split{flex:0 0 6px;background:#c9cfd8;cursor:row-resize;touch-action:none;}
+.dk.dk-side .dk-split{cursor:col-resize;}
+.dk-split:hover,.dk-split:focus-visible{background:#1c5b9c;outline:none;}
+
+.dk-grid{width:100%;min-width:860px;border-collapse:collapse;table-layout:fixed;font-family:Consolas,'Courier New',monospace;font-size:12px;line-height:15px;}
+.dk-grid th{position:sticky;top:0;z-index:2;background:#d6e4ff;color:#0b3d91;border:1px solid #9bb6e0;padding:1px 4px;text-align:left;font-weight:700;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;user-select:none;}
+.dk-grid th:hover{background:#c3d6fb;}
+.dk-grid th .dk-arrow{font-size:10px;margin-left:2px;}
+.dk-grid td{border:1px solid #e3e7ee;padding:1px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#111;}
+.dk-grid tbody tr{cursor:pointer;}
+.dk-grid tbody tr:hover td{background:#eef4ff;}
+.dk-grid td.ctr{text-align:center;}
+.dk-grid td.num{text-align:right;}
+.dk-grid tr.st-disp td{background:#e2edff;}
+.dk-grid tr.st-done td{background:#eeeeee;color:#6b6b6b;}
+.dk-grid tr.st-cxl td{color:#8a8a8a;text-decoration:line-through;background:#fafafa;}
+.dk-grid tr.dk-sel td,.dk-grid tr.dk-sel:hover td{background:#f6c9c0 !important;color:#111;}
+.dk-grid tr.dk-dhead td{background:#ece9d8 !important;color:#333;font-weight:700;cursor:default;text-decoration:none;border-color:#b7b3a1;}
+.dk-grid td.dk-editing{padding:0;overflow:visible;position:relative;z-index:3;}
+.dk-grid td.dk-editing input,.dk-grid td.dk-editing select{width:100%;min-width:90px;font:12px Consolas,'Courier New',monospace;padding:1px 3px;border:2px solid #1c5b9c;border-radius:0;background:#fffbe6;color:#111;height:18px;}
+.dk-grid td.dk-editing .ac-wrap{position:relative;}
+.dk-grid td.dk-err{box-shadow:inset 0 0 0 2px #b02318;}
+.dk-grid td.dk-ok{box-shadow:inset 0 0 0 2px #2e9e5b;}
+.dk-empty td{text-align:center;padding:12px !important;color:#5b5b5b;cursor:default;}
+.dk-badge{display:inline-block;font:700 10px/13px Arial,sans-serif;padding:0 4px;border-radius:3px;margin-left:3px;vertical-align:1px;text-decoration:none;}
+.dk-badge.due{background:#e6b800;color:#000;}
+.dk-badge.late{background:#d33a2c;color:#fff;}
+.dk-cd{color:#5b5b5b;font-size:11px;margin-left:4px;}
+
+.dk-bar{display:flex;flex-wrap:wrap;gap:4px;padding:5px 8px;background:#ece9d8;border-top:1px solid #b7b3a1;align-items:center;border-radius:0 0 6px 6px;}
+.dk-bar button{font-family:Tahoma,'Segoe UI',sans-serif;font-size:12px;padding:3px 10px;background:linear-gradient(#fdfdfd,#e4e4e4);border:1px solid #8a8a8a;border-radius:3px;cursor:pointer;color:#111;}
+.dk-bar button:hover{background:linear-gradient(#fff,#eee);}
+.dk-bar button:disabled{opacity:.45;cursor:default;}
+.dk-selinfo{font:12px Consolas,'Courier New',monospace;color:#333;margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40%;}
+.dk-msg{font-size:12px;padding:3px 8px;min-height:20px;color:#333;border-top:1px solid #e3e7ee;}
+.dk-msg.err{color:#b02318;font-weight:700;}
+
+.dk-menu{position:fixed;z-index:9000;background:#fff;border:1px solid #8a8a8a;box-shadow:0 4px 16px rgba(0,0,0,.25);padding:3px 0;min-width:190px;font:12px Tahoma,'Segoe UI',sans-serif;border-radius:3px;}
+.dk-menu .dk-mh{padding:3px 10px;font-weight:700;color:#0a246a;border-bottom:1px solid #e3e7ee;margin-bottom:2px;}
+.dk-menu button{display:block;width:100%;text-align:left;border:none;background:none;padding:4px 12px;font:inherit;color:#111;cursor:pointer;}
+.dk-menu button:hover,.dk-menu button:focus{background:#0a246a;color:#fff;outline:none;}
+.dk-menu button:disabled{color:#999;background:none;cursor:default;}
+
+#undoDesk{position:fixed;left:50%;bottom:58px;transform:translateX(-50%);z-index:9500;background:#222;color:#fff;padding:8px 12px;border-radius:6px;display:flex;gap:10px;align-items:center;font-size:13px;box-shadow:0 3px 12px rgba(0,0,0,.3);}
+#undoDesk[hidden]{display:none;}
+#undoDesk button{background:#e6b800;border:none;border-radius:4px;padding:3px 10px;font-weight:700;cursor:pointer;}
+
+/* silent edit-overlay commits (the console's own save path, never shown) */
+body.dk-silent #editOvl{visibility:hidden !important;}
+
+/* Expert: the desk replaces the classic single grid inside #classicWrap */
+#classicWrap.dk-on .classic-scroll,#classicWrap.dk-on #classicBar{display:none !important;}
+#classicWrap.dk-on > .panel-body{padding:6px !important;}
+#classicWrap.dk-on > .panel-head .hint{display:none;}
+/* Simple: the desk is the Board's main surface; hidden on Book */
+#deskSimpleHost[hidden],#deskExpertHost[hidden]{display:none !important;}
+#boardArea.dk-hide-old > .panel{display:none !important;}
+/* pop-out ?screen=desk: the desk alone */
+body.popout.screen-desk .wrap{display:none !important;}
+body.popout.screen-desk #deskPopHost{display:block;padding:8px;}
+body.popout.screen-desk .dk-body{height:calc(100vh - 120px);}
+
+/* themes */
+body.gold .dk{background:#14171c;border-color:#33373f;}
+body.gold .dk-top{background:#1a1d23;border-color:#33373f;}
+body.gold .dk-title{color:#e7d9a8;}
+body.gold .dk-grid th{background:#16233c;color:#cfe0ff;border-color:#2a3c60;}
+body.gold .dk-grid td{border-color:#2a2f38;color:#e8e9ec;}
+body.gold .dk-grid tbody tr:hover td{background:#1b2333;}
+body.gold .dk-grid tr.st-disp td{background:#17284a;}
+body.gold .dk-grid tr.st-done td{background:#22252b;color:#9a9da3;}
+body.gold .dk-grid tr.st-cxl td{background:#1a1c20;color:#7c7f85;}
+body.gold .dk-grid tr.dk-sel td{background:#5a2f28 !important;color:#f6c9c0;}
+body.gold .dk-grid tr.dk-dhead td{background:#2a2a20 !important;color:#e7d9a8;}
+body.gold .dk-msg{color:#e8e9ec;border-color:#2a2f38;}
+
+/* print */
+.dk-print table{width:100%;border-collapse:collapse;font:11px Consolas,'Courier New',monospace;}
+.dk-print th,.dk-print td{border:1px solid #999;padding:2px 4px;text-align:left;}
+.dk-print th{background:#ddd;}
+.dk-print h2{font:700 15px Arial,sans-serif;margin:6px 0;}
+.dk-print .dk-pb{page-break-after:always;break-after:page;}
+
+/* phone / narrow: always stacked, each grid scrolls sideways inside its own pane */
+@media (max-width:760px){
+  .dk .dk-body,.dk.dk-side .dk-body{flex-direction:column;height:auto;}
+  .dk-pane,.dk-pane.dk-first{flex:none !important;height:auto;}
+  .dk-scroll{max-height:60vh;overflow:auto;}
+  .dk-split{display:none;}
+  .dk-filter{width:110px;}
+  .dk-selinfo{max-width:100%;margin-left:0;}
+}
+@media print{.dk-top,.dk-bar,.dk-msg,.dk-filter{display:none !important;}}
