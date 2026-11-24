@@ -1040,7 +1040,14 @@
   function moneyNative() { try { var fn = window.Money && window.Money.total; while (fn && fn.__tollsWrapped && fn._orig) fn = fn._orig; return !!(fn && fn.feesIncluded); } catch (e) { return false; } }
   function feeText(s, t) {
     var fees = feesOf(t); if (!fees || typeof s !== 'string' || !s) return s;
-    if (moneyNative()) return s;   /* money.js and messages.js already count the fees in every amount and text */
+    if (moneyNative()) {
+      /* money.js and messages.js already count the fees in every amount: only add the "(incl. $X fees)" note after the fee-inclusive total */
+      if (s.indexOf('(incl. ' + cmoney(fees) + ' fees)') >= 0) return s;
+      var tw = 0; try { tw = round2(num(window.Money.total(t))); } catch (e) { tw = 0; }
+      if (!(tw > 0)) return s;
+      var mark = cmoney(tw), note = mark + ' (incl. ' + cmoney(fees) + ' fees)';
+      return s.split(note).join('\u0004').split(mark).join(note).split('\u0004').join(note);
+    }
     if (s.indexOf(cmoney(fees) + ' fees') >= 0) return s;
     var fare = num(t.fare), A = '\u0001', B = '\u0002', C = '\u0003';
     var out = s.split(cmoney(fare) + ' + tolls').join(A);
